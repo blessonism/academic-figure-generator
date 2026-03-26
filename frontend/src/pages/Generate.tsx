@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
@@ -52,14 +52,14 @@ export function Generate() {
       return () => { mounted = false; };
    }, []);
 
-   const stopPolling = useCallback(() => {
+   const stopPolling = () => {
       if (pollTimerRef.current) {
          clearTimeout(pollTimerRef.current);
          pollTimerRef.current = null;
       }
-   }, []);
+   };
 
-   const pollStatus = useCallback(async (imageId: string) => {
+   async function pollStatus(imageId: string): Promise<void> {
       try {
          const statusRes = await api.get(`/images/${imageId}/status`);
          const status = statusRes.data.generation_status;
@@ -83,13 +83,15 @@ export function Generate() {
             setError(statusRes.data.generation_error || '图片生成失败，请稍后重试');
             setIsGenerating(false);
          } else {
-            pollTimerRef.current = setTimeout(() => pollStatus(imageId), 3000);
+            pollTimerRef.current = setTimeout(() => {
+               void pollStatus(imageId);
+            }, 3000);
          }
       } catch {
          setError('查询生成状态失败');
          setIsGenerating(false);
       }
-   }, []);
+   }
 
    const handleGenerate = async () => {
       if (!prompt.trim() || !user) return;
@@ -106,9 +108,11 @@ export function Generate() {
 
          const imageId = response.data.id;
          pollTimerRef.current = setTimeout(() => pollStatus(imageId), 3000);
-      } catch (e: any) {
+      } catch (e: unknown) {
          console.error(e);
-         const code = e.response?.data?.error;
+         const code = typeof e === 'object' && e !== null && 'response' in e
+            ? (e as { response?: { data?: { error?: string } } }).response?.data?.error
+            : undefined;
          const msg = getApiErrorMessage(e, code === 'INSUFFICIENT_BALANCE' ? '余额不足，无法生成图片。' : '请求失败，请检查网络连接');
          setError(msg);
          setResultImage(null);
@@ -118,9 +122,14 @@ export function Generate() {
 
    return (
       <div className="max-w-4xl mx-auto space-y-6">
-         <div>
-            <h1 className="text-3xl font-bold tracking-tight">直接生成模式</h1>
-            <p className="text-muted-foreground mt-1">跳过文档解析环节，直接输入您的需求即刻生成学术配图。</p>
+         <div className="space-y-2">
+            <div className="inline-flex items-center rounded-full border bg-muted/30 px-3 py-1 text-xs font-medium text-muted-foreground">
+               Quick Lab
+            </div>
+            <div>
+               <h1 className="text-3xl font-bold tracking-tight">Quick Lab</h1>
+               <p className="text-muted-foreground mt-1">跳过 Studio 项目的文档链路，直接验证配图想法。后续会支持把结果保存回项目继续精修。</p>
+            </div>
          </div>
 
          {error && (
@@ -151,20 +160,25 @@ export function Generate() {
                            当前价格（2K）：¥{imagePricing.price_cny_2k.toFixed(2)}/张
                         </div>
                      )}
-                     <Select value={aspectRatio} onValueChange={setAspectRatio}>
-                        <SelectTrigger className="w-[120px]">
-                           <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                           <SelectItem value="16:9">16:9 宽屏</SelectItem>
-                           <SelectItem value="4:3">4:3 标准</SelectItem>
-                           <SelectItem value="1:1">1:1 方形</SelectItem>
-                        </SelectContent>
-                     </Select>
-                     <Button onClick={handleGenerate} disabled={isGenerating || !prompt.trim()}>
-                        {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Wand2 className="w-4 h-4 mr-2" />}
-                        {isGenerating ? '生成中...' : '生成配图'}
-                     </Button>
+                     <div className="flex items-center gap-3 flex-wrap">
+                        <Select value={aspectRatio} onValueChange={setAspectRatio}>
+                           <SelectTrigger className="w-[120px]">
+                              <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                              <SelectItem value="16:9">16:9 宽屏</SelectItem>
+                              <SelectItem value="4:3">4:3 标准</SelectItem>
+                              <SelectItem value="1:1">1:1 方形</SelectItem>
+                           </SelectContent>
+                        </Select>
+                        <Button type="button" variant="outline" disabled>
+                           保存到项目（即将支持）
+                        </Button>
+                        <Button onClick={handleGenerate} disabled={isGenerating || !prompt.trim()}>
+                           {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Wand2 className="w-4 h-4 mr-2" />}
+                           {isGenerating ? '生成中...' : '开始试生成'}
+                        </Button>
+                     </div>
                   </CardFooter>
                </Card>
             </div>

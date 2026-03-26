@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as z from 'zod';
 import { format } from 'date-fns';
 import { FileText, Image as ImageIcon, MessageSquare, Trash2, Plus, RefreshCw, Folder } from 'lucide-react';
 
 import { api } from '../lib/api';
+import { getApiErrorMessage } from '../lib/apiError';
 import { useAuthStore } from '../store/authStore';
-import { useProjectStore } from '../store/projectStore';
+import { getProjectProgressSummary, useProjectStore } from '../store/projectStore';
+import type { Project } from '../store/projectStore';
 
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -39,7 +41,7 @@ export function Projects() {
     const [newProjectField, setNewProjectField] = useState('计算机科学'); // Default value
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const fetchProjects = async () => {
+    const fetchProjects = useCallback(async () => {
         try {
             const response = await api.get('/projects/?page=1&page_size=100&status=active');
             setProjects(response.data.items || response.data || []);
@@ -48,7 +50,7 @@ export function Projects() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [setProjects]);
 
     useEffect(() => {
         // Wait until token is available (zustand persist may hydrate after first render).
@@ -58,8 +60,8 @@ export function Projects() {
             return;
         }
         setIsLoading(true);
-        fetchProjects();
-    }, [token, setProjects]);
+        void fetchProjects();
+    }, [token, setProjects, fetchProjects]);
 
     const handleCreateProject = async () => {
         setError('');
@@ -83,7 +85,7 @@ export function Projects() {
 
         setIsSubmitting(true);
         try {
-            const payload: any = {
+            const payload = {
                 name: parsed.data.name,
                 description: parsed.data.description || null,
                 paper_field: parsed.data.paper_field || null,
@@ -97,9 +99,9 @@ export function Projects() {
             setNewProjectName('');
             setNewProjectDesc('');
             setNewProjectField('计算机科学'); // Reset to default
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error(e);
-            setError(e.response?.data?.detail || '项目创建失败，请重试');
+            setError(getApiErrorMessage(e, '项目创建失败，请重试'));
         } finally {
             setIsSubmitting(false);
         }
@@ -118,7 +120,7 @@ export function Projects() {
         }
     };
 
-    const handleProjectClick = (project: any) => {
+    const handleProjectClick = (project: Project) => {
         navigate(`/projects/${project.id}`);
     };
 
@@ -224,54 +226,68 @@ export function Projects() {
                 </Card>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {projects.map(project => (
-                        <Card
-                            key={project.id}
-                            className="cursor-pointer transition-all hover:border-primary/50 hover:shadow-md group"
-                            onClick={() => handleProjectClick(project)}
-                        >
-                            <CardHeader className="pb-3 border-b">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <CardTitle className="text-xl line-clamp-1" title={project.name}>{project.name}</CardTitle>
-                                        <CardDescription className="mt-1 flex items-center gap-2">
-                                            {project.paper_field && <Badge variant="secondary" className="font-normal">{project.paper_field}</Badge>}
-                                            <span className="text-xs">{formatDate(project.created_at)}</span>
-                                        </CardDescription>
-                                    </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive hover:bg-destructive/10 -mt-1 -mr-2"
-                                        onClick={(e) => handleDelete(e, project.id)}
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                        <span className="sr-only">删除项目</span>
-                                    </Button>
-                                </div>
-                            </CardHeader>
-                            <CardContent className="pt-4">
-                                <p className="text-sm text-muted-foreground line-clamp-2 h-10">
-                                    {project.description || "无描述"}
-                                </p>
+                    {projects.map(project => {
+                        const progress = getProjectProgressSummary(project);
 
-                                <div className="mt-6 grid grid-cols-3 gap-2 text-center text-sm border-t pt-4">
-                                    <div className="flex flex-col items-center justify-center">
-                                        <span className="font-semibold text-foreground flex items-center"><FileText className="w-3.5 h-3.5 mr-1 text-blue-500" /> {project.document_count || 0}</span>
-                                        <span className="text-xs text-muted-foreground">文档</span>
+                        return (
+                            <Card
+                                key={project.id}
+                                className="cursor-pointer transition-all hover:border-primary/50 hover:shadow-md group"
+                                onClick={() => handleProjectClick(project)}
+                            >
+                                <CardHeader className="pb-3 border-b">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <CardTitle className="text-xl line-clamp-1" title={project.name}>{project.name}</CardTitle>
+                                            <CardDescription className="mt-1 flex items-center gap-2">
+                                                {project.paper_field && <Badge variant="secondary" className="font-normal">{project.paper_field}</Badge>}
+                                                <span className="text-xs">{formatDate(project.created_at)}</span>
+                                            </CardDescription>
+                                        </div>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive hover:bg-destructive/10 -mt-1 -mr-2"
+                                            onClick={(e) => handleDelete(e, project.id)}
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                            <span className="sr-only">删除项目</span>
+                                        </Button>
                                     </div>
-                                    <div className="flex flex-col items-center justify-center border-l">
-                                        <span className="font-semibold text-foreground flex items-center"><MessageSquare className="w-3.5 h-3.5 mr-1 text-green-500" /> {project.prompt_count || 0}</span>
-                                        <span className="text-xs text-muted-foreground">提示词</span>
+                                </CardHeader>
+                                <CardContent className="pt-4">
+                                    <p className="text-sm text-muted-foreground line-clamp-2 h-10">
+                                        {project.description || "无描述"}
+                                    </p>
+
+                                    <div className="mt-4 rounded-lg border bg-muted/30 px-3 py-3">
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="bg-background">{progress.label}</Badge>
+                                            <span className="text-xs text-muted-foreground">当前进度</span>
+                                        </div>
+                                        <p className="mt-2 text-sm text-muted-foreground">
+                                            {progress.detail}
+                                        </p>
                                     </div>
-                                    <div className="flex flex-col items-center justify-center border-l">
-                                        <span className="font-semibold text-foreground flex items-center"><ImageIcon className="w-3.5 h-3.5 mr-1 text-purple-500" /> {project.image_count || 0}</span>
-                                        <span className="text-xs text-muted-foreground">配图</span>
+
+                                    <div className="mt-6 grid grid-cols-3 gap-2 text-center text-sm border-t pt-4">
+                                        <div className="flex flex-col items-center justify-center">
+                                            <span className="font-semibold text-foreground flex items-center"><FileText className="w-3.5 h-3.5 mr-1 text-blue-500" /> {project.document_count || 0}</span>
+                                            <span className="text-xs text-muted-foreground">文档</span>
+                                        </div>
+                                        <div className="flex flex-col items-center justify-center border-l">
+                                            <span className="font-semibold text-foreground flex items-center"><MessageSquare className="w-3.5 h-3.5 mr-1 text-green-500" /> {project.prompt_count || 0}</span>
+                                            <span className="text-xs text-muted-foreground">提示词</span>
+                                        </div>
+                                        <div className="flex flex-col items-center justify-center border-l">
+                                            <span className="font-semibold text-foreground flex items-center"><ImageIcon className="w-3.5 h-3.5 mr-1 text-purple-500" /> {project.image_count || 0}</span>
+                                            <span className="text-xs text-muted-foreground">配图</span>
+                                        </div>
                                     </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
+                                </CardContent>
+                            </Card>
+                        );
+                    })}
                 </div>
             )}
         </div>
