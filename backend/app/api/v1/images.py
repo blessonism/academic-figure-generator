@@ -4,9 +4,10 @@ import asyncio
 import json
 import logging
 import mimetypes
+from datetime import UTC, datetime
+from decimal import Decimal
 from urllib.parse import quote
 from uuid import UUID
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
@@ -33,6 +34,10 @@ from app.schemas.image import (
     ImagePricingResponse,
     ImageResponse,
     ImageStatusResponse,
+)
+from app.services.image_generation_recovery import (
+    build_stale_image_generation_error,
+    is_image_generation_stale,
 )
 from app.tasks.celery_app import celery_app
 
@@ -79,6 +84,36 @@ async def _get_owned_image(
         raise NotFoundException("Image not found")
     if image.user_id != user.id:
         raise ForbiddenException("Not your image")
+    return await _recover_stale_image_if_needed(image, db)
+
+
+async def _recover_stale_image_if_needed(
+    image: Image,
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> Image:
+    current_time = now or datetime.now(UTC)
+    if not is_image_generation_stale(
+        status=image.generation_status,
+        updated_at=image.updated_at,
+        resolution=image.resolution,
+        now=current_time,
+    ):
+        return image
+
+    image.generation_status = "failed"
+    image.generation_error = build_stale_image_generation_error(image.resolution)
+    image.updated_at = current_time
+    db.add(image)
+    await db.flush()
+    await db.commit()
+    logger.warning(
+        "Recovered stale image generation record | image_id=%s task_id=%s updated_at=%s",
+        image.id,
+        image.generation_task_id,
+        image.updated_at,
+    )
     return image
 
 
@@ -364,6 +399,8 @@ async def list_project_images(
         .order_by(Image.created_at.desc())
     )
     images = result.scalars().all()
+    for image in images:
+        await _recover_stale_image_if_needed(image, db)
     return [_image_to_response(img) for img in images]
 
 
@@ -521,7 +558,7 @@ async def stream_image_status(
     generation reaches a terminal state (completed or failed).
     """
     # Verify ownership once before starting the stream
-    image = await _get_owned_image(image_id, user, db)
+    await _get_owned_image(image_id, user, db)
 
     async def event_generator():
         """Yield SSE events until terminal state is reached."""
@@ -545,6 +582,8 @@ async def stream_image_status(
                     "data": json.dumps({"error": "Image not found"}),
                 }
                 break
+
+            current_image = await _recover_stale_image_if_needed(current_image, session)
 
             current_status = current_image.generation_status
 

@@ -60,6 +60,7 @@ celery_app.conf.update(
     # Reliability
     task_track_started=True,
     task_acks_late=True,           # Ack only after task completes (safer against crashes)
+    task_reject_on_worker_lost=True,  # Worker 异常退出时重新入队，避免任务被确认后丢失
     worker_prefetch_multiplier=1,  # One task at a time per worker slot (pairs with acks_late)
     # Result expiry: keep results for 24 hours then evict from Redis
     result_expires=86400,

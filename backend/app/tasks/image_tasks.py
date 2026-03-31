@@ -49,6 +49,7 @@ from sqlalchemy.orm import Session
 
 from app.core.billing import cny_to_usd
 from app.core.security import decrypt_api_key
+from app.services.image_generation_recovery import IMAGE_GENERATION_TIMEOUTS
 from app.services.nanobanana_service import (
     NanoBananaConfigLayer,
     resolve_nanobanana_settings,
@@ -69,15 +70,7 @@ NANOBANANA_API_KEY: str = os.environ.get("NANOBANANA_API_KEY", "")
 NANOBANANA_MODEL: str = os.environ.get("NANOBANANA_MODEL", "gemini-3-pro-image-preview")
 
 # Resolution bucket → (soft_limit_s, hard_limit_s)
-RESOLUTION_TIMEOUTS: dict[str, tuple[int, int]] = {
-    "1k":  (360,  420),
-    "2k":  (600,  660),
-    "4k":  (1140, 1200),
-    # Accept uppercase variants matching the model default "2K"
-    "1K":  (360,  420),
-    "2K":  (600,  660),
-    "4K":  (1140, 1200),
-}
+RESOLUTION_TIMEOUTS: dict[str, tuple[int, int]] = IMAGE_GENERATION_TIMEOUTS
 
 # Resolution bucket → base pixel size (long edge)
 RESOLUTION_BASE_PX: dict[str, int] = {
