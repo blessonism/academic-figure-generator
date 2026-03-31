@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import type {
+  StudioConfirmedScopeSummary,
   StudioPromptDraft,
   StudioPromptDraftReviewStatus,
   StudioPromptMode,
@@ -13,6 +14,7 @@ import type {
 } from '@/studio/types';
 
 interface PromptStageProps {
+  confirmedScopeSummary: StudioConfirmedScopeSummary | null;
   drafts: StudioPromptDraft[];
   promptMode: StudioPromptMode;
   promptRequest: string;
@@ -54,6 +56,7 @@ function getDraftStatusVariant(status: StudioPromptDraftReviewStatus) {
 }
 
 export function PromptStage({
+  confirmedScopeSummary,
   drafts,
   promptMode,
   promptRequest,
@@ -79,6 +82,18 @@ export function PromptStage({
           <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
             先生成可审核的 Prompt 草案，确认哪些图值得进入正式渲染，再继续到下一阶段。
           </div>
+
+          {confirmedScopeSummary ? (
+            <div className="rounded-lg border p-3 text-sm">
+              <p className="font-medium">已确认范围</p>
+              <p className="mt-1 text-muted-foreground">
+                {confirmedScopeSummary.documentName
+                  ? `${confirmedScopeSummary.documentName} · `
+                  : ''}
+                {confirmedScopeSummary.label} · {confirmedScopeSummary.sectionCount} 个章节
+              </p>
+            </div>
+          ) : null}
 
           {statusMessage && (
             <div className="rounded-lg border p-3 text-sm">
@@ -153,7 +168,7 @@ export function PromptStage({
         <CardContent>
           {drafts.length === 0 ? (
             <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-              范围确认完成后，可以先生成草案，再决定哪些图进入正式渲染。
+              当前范围已确认，下一步请先生成草案，再决定哪些图进入正式渲染。
             </div>
           ) : (
             <div className="space-y-4">

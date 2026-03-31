@@ -17,9 +17,12 @@ interface ScopeStageProps {
   documentName?: string;
   sections: StudioDocumentSection[];
   selectedSectionIndices: number[];
+  canConfirm: boolean;
+  isConfirmed: boolean;
   onModeChange: (mode: StudioScopeMode) => void;
   onPresetSelect: (presetId: StudioScopePresetId) => void;
   onSelectedSectionIndicesChange: (indices: number[]) => void;
+  onConfirm: () => void;
 }
 
 interface SectionNode {
@@ -168,9 +171,12 @@ export function ScopeStage({
   documentName,
   sections,
   selectedSectionIndices,
+  canConfirm,
+  isConfirmed,
   onModeChange,
   onPresetSelect,
   onSelectedSectionIndicesChange,
+  onConfirm,
 }: ScopeStageProps) {
   const [collapsedGroupOverrides, setCollapsedGroupOverrides] = useState<Record<string, boolean>>({});
   const [activePreviewIdx, setActivePreviewIdx] = useState<number | null>(null);
@@ -198,6 +204,7 @@ export function ScopeStage({
   );
 
   const selectedPreset = SCOPE_PRESET_OPTIONS.find((option) => option.id === selectedPresetId);
+  const confirmButtonLabel = isConfirmed ? '继续前往生成草案' : '确认范围并继续';
 
   const selectMany = (indices: number[], checked: boolean) => {
     const next = new Set(selectedSectionIndices);
@@ -515,6 +522,25 @@ export function ScopeStage({
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardContent className="flex flex-col gap-3 p-6 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1 text-sm">
+            <p className="font-medium">{isConfirmed ? '当前范围已确认' : '确认后将进入草案阶段'}</p>
+            <p className="text-muted-foreground">
+              {!canConfirm
+                ? '自定义范围至少需要选择 1 个章节后才能继续。'
+                : isConfirmed
+                  ? '当前范围保持不变时，可直接继续前往生成草案。'
+                  : '系统会保留本次范围选择，下一步进入草案生成。'}
+            </p>
+          </div>
+
+          <Button type="button" onClick={onConfirm} disabled={!canConfirm}>
+            {confirmButtonLabel}
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -7,6 +7,17 @@ describe('studio stage selectors', () => {
     expect(getFirstAccessibleStage({ hasParsedDocument: false })).toBe('ingest');
   });
 
+  it('recommends scope before scope is confirmed', () => {
+    expect(
+      getNextRecommendedStage({
+        hasParsedDocument: true,
+        hasConfirmedScope: false,
+        hasAcceptedDraft: false,
+        hasRenderedAsset: false,
+      }),
+    ).toBe('scope');
+  });
+
   it('recommends prompt after scope is confirmed', () => {
     expect(
       getNextRecommendedStage({

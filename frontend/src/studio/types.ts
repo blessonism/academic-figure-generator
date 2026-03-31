@@ -15,6 +15,19 @@ export interface StudioStageSnapshot {
   hasRenderedAsset?: boolean;
 }
 
+export interface StudioConfirmedScope {
+  mode: StudioScopeMode;
+  presetId: StudioScopePresetId;
+  sectionIndices: number[];
+  documentId: string | null;
+}
+
+export interface StudioConfirmedScopeSummary {
+  label: string;
+  sectionCount: number;
+  documentName: string | null;
+}
+
 export interface StudioDocumentSection {
   title?: string;
   content?: string;

@@ -6,6 +6,7 @@ describe('PromptStage', () => {
   it('renders prompt drafts with accept and skip actions', () => {
     render(
       <PromptStage
+        confirmedScopeSummary={null}
         drafts={[
           {
             id: 'draft-1',

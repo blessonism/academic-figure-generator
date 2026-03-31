@@ -19,7 +19,10 @@ export function ProjectStudioPage() {
     currentProject,
     currentStage,
     documents,
+    confirmedScopeSummary,
     hasOcrConfig,
+    hasConfirmedScope,
+    isCurrentScopeConfirmed,
     hasParsedDocument,
     healthItems,
     isGeneratingDrafts,
@@ -49,6 +52,7 @@ export function ProjectStudioPage() {
     handleDraftPromptChange,
     handleDraftStatusChange,
     handleDownloadMarkdown,
+    handleConfirmScope,
     handleFileChange,
     handleGeneratePromptDrafts,
     handleGenerateRenderAsset,
@@ -62,6 +66,7 @@ export function ProjectStudioPage() {
     handleReviewAssetMarkFinal,
     handleResetRenderAssetOverrides,
     handleSaveDraftPrompt,
+    handleStageChange,
     handleScopeModeChange,
     handleScopePresetSelect,
     handleSelectedSectionIndicesChange,
@@ -85,6 +90,16 @@ export function ProjectStudioPage() {
         status: 'blocked',
         reason: '缺少已解析文档',
         nextAction: '请先上传并解析论文',
+      };
+    }
+
+    if (stage === 'prompt' && !hasConfirmedScope) {
+      return {
+        id: stage,
+        label: STUDIO_STAGE_LABELS[stage],
+        status: index === currentStageIndex ? 'current' : 'blocked',
+        reason: '尚未确认范围',
+        nextAction: '请先确认本次参考范围',
       };
     }
 
@@ -114,6 +129,8 @@ export function ProjectStudioPage() {
       status: index < currentStageIndex ? 'complete' : index === currentStageIndex ? 'current' : 'idle',
     };
   });
+  const canConfirmScope =
+    hasParsedDocument && (scopeMode === 'preset' || selectedSectionIndices.length > 0);
 
   const mainContent = isLoading ? (
     <Card>
@@ -144,12 +161,16 @@ export function ProjectStudioPage() {
       documentName={parsedDocument?.original_filename}
       sections={parsedSections}
       selectedSectionIndices={selectedSectionIndices}
+      canConfirm={canConfirmScope}
+      isConfirmed={isCurrentScopeConfirmed}
       onModeChange={handleScopeModeChange}
       onPresetSelect={handleScopePresetSelect}
       onSelectedSectionIndicesChange={handleSelectedSectionIndicesChange}
+      onConfirm={handleConfirmScope}
     />
   ) : currentStage === 'prompt' ? (
     <PromptStage
+      confirmedScopeSummary={confirmedScopeSummary}
       drafts={promptDrafts}
       promptMode={promptMode}
       promptRequest={promptRequest}
@@ -205,7 +226,9 @@ export function ProjectStudioPage() {
   return (
     <StudioShell
       header={<StudioHeader projectId={projectId} currentStage={currentStage} />}
-      stageNav={<StudioStageNav currentStage={currentStage} stages={stages} />}
+      stageNav={
+        <StudioStageNav currentStage={currentStage} stages={stages} onStageSelect={handleStageChange} />
+      }
       sidebar={<StudioHealthChecklist items={healthItems} />}
       main={mainContent}
       inspector={

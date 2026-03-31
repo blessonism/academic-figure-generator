@@ -8,9 +8,11 @@ import { getApiErrorMessage } from '@/lib/apiError';
 import { useAuthStore } from '@/store/authStore';
 import { useProjectStore } from '@/store/projectStore';
 
-import { STUDIO_STAGE_ORDER } from './constants';
+import { STUDIO_SCOPE_PRESET_LABELS, STUDIO_STAGE_ORDER } from './constants';
 import { getFirstAccessibleStage, getPresetSectionIndices } from './selectors';
 import type {
+  StudioConfirmedScope,
+  StudioConfirmedScopeSummary,
   StudioColorSchemeOption,
   StudioDocumentItem,
   StudioHealthItem,
@@ -231,9 +233,21 @@ function canAccessStage(stage: StudioStage, snapshot: StudioStageSnapshot): bool
   return Boolean(snapshot.hasRenderedAsset);
 }
 
+function areSectionIndicesEqual(left: number[], right: number[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+function getConfirmedScopeStorageKey(projectId: string): string {
+  return `studio:${projectId}:confirmed-scope`;
+}
+
 export function useProjectStudio() {
   const { id } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedStage = searchParams.get('stage');
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
@@ -251,6 +265,7 @@ export function useProjectStudio() {
   const [selectedScopePresetId, setSelectedScopePresetId] =
     useState<StudioScopePresetId>('full-paper');
   const [selectedSectionIndices, setSelectedSectionIndices] = useState<number[]>([]);
+  const [confirmedScope, setConfirmedScope] = useState<StudioConfirmedScope | null>(null);
   const [promptMode, setPromptMode] = useState<StudioPromptMode>('overall');
   const [promptRequest, setPromptRequest] = useState('');
   const [templateMode, setTemplateMode] = useState(false);
@@ -274,6 +289,7 @@ export function useProjectStudio() {
   const [reviewFinalVersionIds, setReviewFinalVersionIds] = useState<Record<string, string>>({});
   const previewUrlsRef = useRef<Record<string, string>>({});
   const renderDefaultsKeyRef = useRef<string | null>(null);
+  const scopeRestoreKeyRef = useRef<string | null>(null);
 
   const applyPromptDrafts = useCallback((nextPromptDrafts: ApiPromptDraft[]) => {
     setPromptDrafts((previous) => {
@@ -364,6 +380,53 @@ export function useProjectStudio() {
 
   useEffect(() => {
     if (!id) {
+      setConfirmedScope(null);
+      return;
+    }
+
+    try {
+      const rawValue = window.localStorage.getItem(getConfirmedScopeStorageKey(id));
+      if (!rawValue) {
+        setConfirmedScope(null);
+        return;
+      }
+
+      const parsedValue = JSON.parse(rawValue) as StudioConfirmedScope;
+      if (!parsedValue || typeof parsedValue !== 'object') {
+        setConfirmedScope(null);
+        return;
+      }
+
+      setConfirmedScope({
+        mode: parsedValue.mode,
+        presetId: parsedValue.presetId,
+        sectionIndices: Array.isArray(parsedValue.sectionIndices)
+          ? parsedValue.sectionIndices.filter((value) => typeof value === 'number')
+          : [],
+        documentId: typeof parsedValue.documentId === 'string' ? parsedValue.documentId : null,
+      });
+    } catch {
+      setConfirmedScope(null);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+
+    const storageKey = getConfirmedScopeStorageKey(id);
+
+    if (!confirmedScope) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+
+    window.localStorage.setItem(storageKey, JSON.stringify(confirmedScope));
+  }, [confirmedScope, id]);
+
+  useEffect(() => {
+    if (!id) {
       return;
     }
 
@@ -434,10 +497,42 @@ export function useProjectStudio() {
   const hasParsedDocument = parsedSections.length > 0;
   const hasPromptDrafts = promptDrafts.length > 0;
   const hasAcceptedDraft = promptDrafts.some((draft) => draft.status === 'accepted');
+  const isScopeSelectionConfirmed = useMemo(() => {
+    if (!confirmedScope) {
+      return false;
+    }
+
+    return (
+      confirmedScope.documentId === (parsedDocument?.id ?? null) &&
+      confirmedScope.mode === scopeMode &&
+      confirmedScope.presetId === selectedScopePresetId &&
+      areSectionIndicesEqual(confirmedScope.sectionIndices, selectedSectionIndices)
+    );
+  }, [
+    confirmedScope,
+    parsedDocument?.id,
+    scopeMode,
+    selectedScopePresetId,
+    selectedSectionIndices,
+  ]);
+  const hasConfirmedScope = isScopeSelectionConfirmed || hasPromptDrafts || hasAcceptedDraft;
+  const confirmedScopeSummary = useMemo<StudioConfirmedScopeSummary | null>(() => {
+    if (!isScopeSelectionConfirmed || !confirmedScope) {
+      return null;
+    }
+
+    return {
+      label: STUDIO_SCOPE_PRESET_LABELS[confirmedScope.presetId],
+      sectionCount: confirmedScope.sectionIndices.length,
+      documentName: parsedDocument?.original_filename ?? null,
+    };
+  }, [confirmedScope, isScopeSelectionConfirmed, parsedDocument?.original_filename]);
 
   useEffect(() => {
     if (!hasParsedDocument) {
       setSelectedSectionIndices([]);
+      setConfirmedScope(null);
+      scopeRestoreKeyRef.current = null;
       return;
     }
 
@@ -455,6 +550,34 @@ export function useProjectStudio() {
       previous.filter((index) => index >= 0 && index < parsedSections.length),
     );
   }, [hasParsedDocument, parsedSections, scopeMode, selectedScopePresetId]);
+
+  useEffect(() => {
+    if (!confirmedScope || !parsedDocument || confirmedScope.documentId !== parsedDocument.id) {
+      return;
+    }
+
+    const restoreKey = [
+      parsedDocument.id,
+      confirmedScope.mode,
+      confirmedScope.presetId,
+      confirmedScope.sectionIndices.join(','),
+    ].join(':');
+
+    if (scopeRestoreKeyRef.current === restoreKey) {
+      return;
+    }
+
+    setScopeMode(confirmedScope.mode);
+    setSelectedScopePresetId(confirmedScope.presetId);
+
+    if (confirmedScope.mode === 'custom') {
+      setSelectedSectionIndices(
+        confirmedScope.sectionIndices.filter((index) => index >= 0 && index < parsedSections.length),
+      );
+    }
+
+    scopeRestoreKeyRef.current = restoreKey;
+  }, [confirmedScope, parsedDocument, parsedSections.length]);
 
   const hasOcrConfig = Boolean(user?.paddleocr_api_key_set && user?.paddleocr_server_url);
   const hasPromptConfig = Boolean(user?.prompt_ai_provider && user?.prompt_ai_api_key_set);
@@ -634,18 +757,18 @@ export function useProjectStudio() {
   const stageSnapshot = useMemo<StudioStageSnapshot>(
     () => ({
       hasParsedDocument,
-      hasConfirmedScope: hasPromptDrafts,
+      hasConfirmedScope,
       hasAcceptedDraft,
       hasRenderedAsset,
     }),
-    [hasAcceptedDraft, hasParsedDocument, hasPromptDrafts, hasRenderedAsset],
+    [hasAcceptedDraft, hasConfirmedScope, hasParsedDocument, hasRenderedAsset],
   );
 
   const defaultStage: StudioStage = hasRenderedAsset
     ? 'review'
     : hasAcceptedDraft
       ? 'render'
-      : hasPromptDrafts
+      : hasConfirmedScope || hasPromptDrafts
         ? 'prompt'
         : getFirstAccessibleStage({ hasParsedDocument });
 
@@ -850,6 +973,64 @@ export function useProjectStudio() {
   const handleSelectedSectionIndicesChange = useCallback((indices: number[]) => {
     setSelectedSectionIndices(Array.from(new Set(indices)).sort((left, right) => left - right));
   }, []);
+
+  const handleStageChange = useCallback(
+    (nextStage: StudioStage) => {
+      if (nextStage === currentStage || !canAccessStage(nextStage, stageSnapshot)) {
+        return;
+      }
+
+      setSearchParams((previous) => {
+        const next = new URLSearchParams(previous);
+        next.set('stage', nextStage);
+        return next;
+      });
+    },
+    [currentStage, setSearchParams, stageSnapshot],
+  );
+
+  const handleConfirmScope = useCallback(() => {
+    if (!hasParsedDocument || !parsedDocument) {
+      setStatusMessage({
+        status: 'failed',
+        detail: '请先完成文档解析，再确认本次参考范围。',
+      });
+      return;
+    }
+
+    if (scopeMode === 'custom' && selectedSectionIndices.length === 0) {
+      setStatusMessage({
+        status: 'failed',
+        detail: '自定义范围至少需要选择 1 个章节后才能继续。',
+      });
+      return;
+    }
+
+    const nextConfirmedScope: StudioConfirmedScope = {
+      mode: scopeMode,
+      presetId: selectedScopePresetId,
+      sectionIndices: [...selectedSectionIndices],
+      documentId: parsedDocument.id,
+    };
+
+    setConfirmedScope(nextConfirmedScope);
+    setStatusMessage({
+      status: 'completed',
+      detail: '已确认本次参考范围，下一步请生成草案。',
+    });
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.set('stage', 'prompt');
+      return next;
+    });
+  }, [
+    hasParsedDocument,
+    parsedDocument,
+    scopeMode,
+    selectedScopePresetId,
+    selectedSectionIndices,
+    setSearchParams,
+  ]);
 
   const handlePromptModeChange = useCallback((nextMode: StudioPromptMode) => {
     setPromptMode(nextMode);
@@ -1342,6 +1523,9 @@ export function useProjectStudio() {
     projectId: id ?? null,
     currentProject,
     currentStage,
+    hasConfirmedScope,
+    isCurrentScopeConfirmed: isScopeSelectionConfirmed,
+    confirmedScopeSummary,
     isLoading,
     isRefreshing,
     documents,
@@ -1373,6 +1557,8 @@ export function useProjectStudio() {
     handleFileChange,
     handleTriggerOcr,
     handleDownloadMarkdown,
+    handleConfirmScope,
+    handleStageChange,
     handleScopeModeChange,
     handleScopePresetSelect,
     handleSelectedSectionIndicesChange,

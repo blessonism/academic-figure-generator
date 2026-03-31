@@ -1,4 +1,5 @@
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
 import { render, screen } from '@/test/render';
@@ -8,7 +9,9 @@ const createStudioState = (overrides: Record<string, unknown> = {}) => ({
   currentProject: { name: '测试项目' },
   currentStage: 'ingest',
   documents: [],
+  confirmedScopeSummary: null,
   handleDownloadMarkdown: () => {},
+  handleConfirmScope: () => {},
   handleDraftPromptChange: () => {},
   handleDraftStatusChange: () => {},
   handleFileChange: () => {},
@@ -29,7 +32,10 @@ const createStudioState = (overrides: Record<string, unknown> = {}) => ({
   handleRenderSessionDefaultsChange: () => {},
   handleResetRenderAssetOverrides: () => {},
   handleSaveDraftPrompt: () => {},
+  handleStageChange: () => {},
   handleTriggerOcr: () => {},
+  hasConfirmedScope: false,
+  isCurrentScopeConfirmed: false,
   hasOcrConfig: true,
   hasParsedDocument: false,
   healthItems: [],
@@ -99,7 +105,13 @@ describe('ProjectStudioPage', () => {
     mockUseProjectStudio.mockReturnValue(
       createStudioState({
         currentStage: 'prompt',
+        hasConfirmedScope: true,
         hasParsedDocument: true,
+        confirmedScopeSummary: {
+          label: '整篇论文',
+          sectionCount: 6,
+          documentName: 'paper.pdf',
+        },
         promptDrafts: [
           {
             id: 'draft-1',
@@ -124,12 +136,14 @@ describe('ProjectStudioPage', () => {
 
     expect(screen.getByText('整体架构图')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '接受' })).toBeInTheDocument();
+    expect(screen.getByText(/已确认范围/)).toBeInTheDocument();
   });
 
   it('renders render stage when accepted drafts are ready for image generation', () => {
     mockUseProjectStudio.mockReturnValue(
       createStudioState({
         currentStage: 'render',
+        hasConfirmedScope: true,
         hasParsedDocument: true,
         promptDrafts: [
           {
@@ -182,6 +196,7 @@ describe('ProjectStudioPage', () => {
     mockUseProjectStudio.mockReturnValue(
       createStudioState({
         currentStage: 'review',
+        hasConfirmedScope: true,
         hasParsedDocument: true,
         promptDrafts: [
           {
@@ -251,5 +266,60 @@ describe('ProjectStudioPage', () => {
 
     expect(screen.getByRole('img', { name: '整体架构图 预览' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '标记为最终稿' })).toBeInTheDocument();
+  });
+
+  it('shows prompt stage as blocked before scope confirmation', () => {
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'scope',
+        hasParsedDocument: true,
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/projects/42?stage=scope']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('尚未确认范围')).toBeInTheDocument();
+    expect(screen.getByText('请先确认本次参考范围')).toBeInTheDocument();
+  });
+
+  it('wires scope confirm action from the page', async () => {
+    const user = userEvent.setup();
+    const handleConfirmScope = vi.fn();
+
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'scope',
+        hasParsedDocument: true,
+        selectedSectionIndices: [0],
+        handleConfirmScope,
+        parsedDocument: {
+          original_filename: 'paper.pdf',
+        },
+        parsedSections: [
+          {
+            title: '1 Introduction',
+            content: 'Intro content',
+          },
+        ],
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/projects/42?stage=scope']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole('button', { name: '确认范围并继续' }));
+
+    expect(handleConfirmScope).toHaveBeenCalledTimes(1);
   });
 });

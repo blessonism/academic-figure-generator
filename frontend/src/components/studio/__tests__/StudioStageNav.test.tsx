@@ -15,6 +15,7 @@ describe('StudioStageNav', () => {
             nextAction: '请先上传并解析论文',
           },
         ]}
+        onStageSelect={() => {}}
       />,
     );
 

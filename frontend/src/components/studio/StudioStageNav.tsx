@@ -4,6 +4,7 @@ import type { StudioStage, StudioStageNavItem } from '@/studio/types';
 interface StudioStageNavProps {
   currentStage: StudioStage;
   stages: StudioStageNavItem[];
+  onStageSelect: (stage: StudioStage) => void;
 }
 
 function getStageClasses(isCurrent: boolean, status: StudioStageNavItem['status']) {
@@ -22,23 +23,38 @@ function getStageClasses(isCurrent: boolean, status: StudioStageNavItem['status'
   return 'border-border bg-card';
 }
 
-export function StudioStageNav({ currentStage, stages }: StudioStageNavProps) {
+export function StudioStageNav({ currentStage, stages, onStageSelect }: StudioStageNavProps) {
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
       {stages.map((stage) => {
         const isCurrent = stage.id === currentStage;
+        const isBlocked = stage.status === 'blocked';
+        const content = (
+          <CardContent className="space-y-2 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-medium">{stage.label}</p>
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">{stage.status}</span>
+            </div>
+
+            {stage.reason ? <p className="text-sm text-muted-foreground">{stage.reason}</p> : null}
+            {stage.nextAction ? <p className="text-sm font-medium text-foreground">{stage.nextAction}</p> : null}
+          </CardContent>
+        );
 
         return (
           <Card key={stage.id} className={getStageClasses(isCurrent, stage.status)}>
-            <CardContent className="space-y-2 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-medium">{stage.label}</p>
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">{stage.status}</span>
-              </div>
-
-              {stage.reason ? <p className="text-sm text-muted-foreground">{stage.reason}</p> : null}
-              {stage.nextAction ? <p className="text-sm font-medium text-foreground">{stage.nextAction}</p> : null}
-            </CardContent>
+            {isBlocked ? (
+              content
+            ) : (
+              <button
+                type="button"
+                className="w-full text-left"
+                disabled={isCurrent}
+                onClick={() => onStageSelect(stage.id)}
+              >
+                {content}
+              </button>
+            )}
           </Card>
         );
       })}
