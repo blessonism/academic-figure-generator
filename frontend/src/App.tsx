@@ -4,7 +4,7 @@ import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { LinuxDOCallback } from './pages/LinuxDOCallback';
 import { Projects } from './pages/Projects';
-import { ProjectWorkspace } from './pages/ProjectWorkspace';
+import { ProjectStudioPage } from './pages/ProjectStudioPage';
 import { ColorSchemes } from './pages/ColorSchemes';
 import { Usage } from './pages/Usage';
 import { Settings } from './pages/Settings';
@@ -24,7 +24,7 @@ function App() {
           <Route element={<Layout />}>
             <Route path="/" element={<Navigate to="/projects" replace />} />
             <Route path="/projects" element={<Projects />} />
-            <Route path="/projects/:id" element={<ProjectWorkspace />} />
+            <Route path="/projects/:id" element={<ProjectStudioPage />} />
             <Route path="/color-schemes" element={<ColorSchemes />} />
             <Route path="/usage" element={<Usage />} />
             <Route path="/settings" element={<Settings />} />

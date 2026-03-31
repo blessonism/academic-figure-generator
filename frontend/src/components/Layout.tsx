@@ -1,46 +1,42 @@
 import { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuthStore } from '../store/authStore';
-import { LogOut, LayoutDashboard, Palette, Activity, Settings, Zap, Shield, Users, Menu, X } from 'lucide-react';
+import { useAuthStore, type User } from '../store/authStore';
+import { LogOut, LayoutDashboard, Palette, Activity, Settings, Zap, Shield, Users, Menu, X, type LucideIcon } from 'lucide-react';
 import { Button } from './ui/button';
 
-export function Layout() {
-    const logout = useAuthStore((state) => state.logout);
-    const user = useAuthStore((state) => state.user);
-    const navigate = useNavigate();
-    const location = useLocation();
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+type NavItem = {
+    name: string;
+    path: string;
+    icon: LucideIcon;
+};
 
-    const handleLogout = () => {
-        logout();
-        navigate('/login');
-    };
+type SidebarContentProps = {
+    navItems: NavItem[];
+    pathname: string;
+    user: User | null;
+    displayName: string;
+    initials: string;
+    onNavigate: () => void;
+    onLogout: () => void;
+};
 
-    const navItems = [
-        { name: '项目列表', path: '/projects', icon: LayoutDashboard },
-        { name: '配色管理', path: '/color-schemes', icon: Palette },
-        { name: '用量看板', path: '/usage', icon: Activity },
-        { name: '设置', path: '/settings', icon: Settings },
-        { name: '快捷生成', path: '/generate', icon: Zap },
-        ...(user?.is_admin ? [
-            { name: '系统管理', path: '/admin/settings', icon: Shield },
-            { name: '用户管理', path: '/admin/users', icon: Users },
-        ] : []),
-    ];
-
-    const displayName = user?.linuxdo_username || user?.display_name || user?.email || '';
-    const initials = displayName
-        ? displayName.slice(0, 2).toUpperCase()
-        : 'U';
-
-    const SidebarContent = () => (
+function SidebarContent({
+    navItems,
+    pathname,
+    user,
+    displayName,
+    initials,
+    onNavigate,
+    onLogout,
+}: SidebarContentProps) {
+    return (
         <div className="flex flex-col h-full">
             {/* Logo + App Name */}
             <div className="px-4 py-5 flex items-center space-x-3">
                 <Link
                     to="/projects"
                     className="flex items-center space-x-3 group"
-                    onClick={() => setSidebarOpen(false)}
+                    onClick={onNavigate}
                 >
                     <img src="/logo.jpg" alt="Logo" className="w-8 h-8 rounded-lg flex-shrink-0" />
                     <span className="font-semibold text-sm text-foreground leading-tight group-hover:text-primary transition-colors">
@@ -55,12 +51,12 @@ export function Layout() {
             {/* Nav Items */}
             <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
                 {navItems.map((item) => {
-                    const isActive = location.pathname.startsWith(item.path);
+                    const isActive = pathname.startsWith(item.path);
                     return (
                         <Link
                             key={item.path}
                             to={item.path}
-                            onClick={() => setSidebarOpen(false)}
+                            onClick={onNavigate}
                             className={`
                                 flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium
                                 transition-all duration-150 group relative
@@ -112,7 +108,7 @@ export function Layout() {
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={handleLogout}
+                        onClick={onLogout}
                         className="w-full justify-start px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/5 text-sm font-medium"
                     >
                         <LogOut className="w-4 h-4 mr-3 flex-shrink-0" />
@@ -122,12 +118,50 @@ export function Layout() {
             </div>
         </div>
     );
+}
+
+export function Layout() {
+    const logout = useAuthStore((state) => state.logout);
+    const user = useAuthStore((state) => state.user);
+    const navigate = useNavigate();
+    const location = useLocation();
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
+    };
+
+    const navItems = [
+        { name: 'Studio 项目', path: '/projects', icon: LayoutDashboard },
+        { name: '配色管理', path: '/color-schemes', icon: Palette },
+        { name: '用量看板', path: '/usage', icon: Activity },
+        { name: '设置', path: '/settings', icon: Settings },
+        { name: 'Quick Lab', path: '/generate', icon: Zap },
+        ...(user?.is_admin ? [
+            { name: '系统管理', path: '/admin/settings', icon: Shield },
+            { name: '用户管理', path: '/admin/users', icon: Users },
+        ] : []),
+    ];
+
+    const displayName = user?.linuxdo_username || user?.display_name || user?.email || '';
+    const initials = displayName
+        ? displayName.slice(0, 2).toUpperCase()
+        : 'U';
 
     return (
         <div className="min-h-screen flex bg-muted/30">
             {/* Desktop Sidebar */}
             <aside className="hidden md:flex flex-col w-[260px] flex-shrink-0 fixed inset-y-0 left-0 z-20 bg-muted/50 border-r border-border/60">
-                <SidebarContent />
+                <SidebarContent
+                    navItems={navItems}
+                    pathname={location.pathname}
+                    user={user}
+                    displayName={displayName}
+                    initials={initials}
+                    onNavigate={() => setSidebarOpen(false)}
+                    onLogout={handleLogout}
+                />
             </aside>
 
             {/* Mobile Overlay */}
@@ -156,7 +190,15 @@ export function Layout() {
                 >
                     <X className="w-4 h-4" />
                 </button>
-                <SidebarContent />
+                <SidebarContent
+                    navItems={navItems}
+                    pathname={location.pathname}
+                    user={user}
+                    displayName={displayName}
+                    initials={initials}
+                    onNavigate={() => setSidebarOpen(false)}
+                    onLogout={handleLogout}
+                />
             </aside>
 
             {/* Main Content */}
