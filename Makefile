@@ -1,4 +1,7 @@
-.PHONY: help dev up down build logs migrate seed test lint clean
+.PHONY: help dev dev-backend up down build logs migrate seed test lint format frontend-test frontend-lint frontend-build check clean
+
+COMPOSE_DEV = docker compose -f docker-compose.yml -f docker-compose.dev.yml
+COMPOSE_PROD = docker compose -f docker-compose.yml -f docker-compose.prod.yml
 
 help: ## Show help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -6,67 +9,83 @@ help: ## Show help
 # ===== Development =====
 
 dev: ## Start all services in development mode
-	docker compose up --build
+	$(COMPOSE_DEV) up --build
 
 up: ## Start all services (detached)
-	docker compose up -d --build
+	$(COMPOSE_DEV) up -d --build
+
+dev-backend: ## Start backend stack only for local frontend development
+	$(COMPOSE_DEV) up --build postgres redis minio migrate backend celery-worker celery-beat
 
 down: ## Stop all services
-	docker compose down
+	$(COMPOSE_DEV) down
 
 build: ## Build all images
-	docker compose build
+	$(COMPOSE_DEV) build
 
 logs: ## Tail logs
-	docker compose logs -f
+	$(COMPOSE_DEV) logs -f
 
 # ===== Database =====
 
 migrate: ## Run database migrations
-	docker compose exec backend alembic upgrade head
+	$(COMPOSE_DEV) exec backend alembic upgrade head
 
 migrate-create: ## Create a new migration (usage: make migrate-create MSG="add users table")
-	docker compose exec backend alembic revision --autogenerate -m "$(MSG)"
+	$(COMPOSE_DEV) exec backend alembic revision --autogenerate -m "$(MSG)"
 
 seed: ## Seed database with initial data
-	docker compose exec backend python -m scripts.seed_color_schemes
+	$(COMPOSE_DEV) exec backend python -m scripts.seed_color_schemes
 
 # ===== Testing =====
 
 test: ## Run tests
-	docker compose exec backend pytest -v
+	$(COMPOSE_DEV) exec backend pytest -v
+	npm --prefix frontend run test -- --run
 
 test-cov: ## Run tests with coverage
-	docker compose exec backend pytest --cov=app --cov-report=html -v
+	$(COMPOSE_DEV) exec backend pytest --cov=app --cov-report=html -v
 
 # ===== Code Quality =====
 
 lint: ## Run linter
-	docker compose exec backend ruff check app/
-	docker compose exec backend ruff format --check app/
+	$(COMPOSE_DEV) exec backend ruff check app/
+	$(COMPOSE_DEV) exec backend ruff format --check app/
+	npm --prefix frontend run lint
+
+frontend-test: ## Run frontend tests
+	npm --prefix frontend run test -- --run
+
+frontend-lint: ## Run frontend lint
+	npm --prefix frontend run lint
+
+frontend-build: ## Build frontend bundle
+	npm --prefix frontend run build
+
+check: lint test frontend-build ## Run full backend/frontend quality checks
 
 format: ## Auto-format code
-	docker compose exec backend ruff check --fix app/
-	docker compose exec backend ruff format app/
+	$(COMPOSE_DEV) exec backend ruff check --fix app/
+	$(COMPOSE_DEV) exec backend ruff format app/
 
 # ===== Production =====
 
 prod-up: ## Start production services
-	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+	$(COMPOSE_PROD) up -d --build
 
 prod-down: ## Stop production services
-	docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+	$(COMPOSE_PROD) down
 
 # ===== Utilities =====
 
 shell: ## Open a shell in the backend container
-	docker compose exec backend bash
+	$(COMPOSE_DEV) exec backend bash
 
 dbshell: ## Open PostgreSQL shell
-	docker compose exec postgres psql -U afg_user -d academic_figure_generator
+	$(COMPOSE_DEV) exec postgres psql -U afg_user -d academic_figure_generator
 
 redis-cli: ## Open Redis CLI
-	docker compose exec redis redis-cli
+	$(COMPOSE_DEV) exec redis redis-cli
 
 clean: ## Remove all containers, volumes, and images
-	docker compose down -v --rmi all --remove-orphans
+	$(COMPOSE_DEV) down -v --rmi all --remove-orphans
