@@ -353,9 +353,19 @@ export function RenderStage({
                         />
                       ) : asset.status === 'processing' ? (
                         <div className="flex h-full items-center justify-center">
-                          <div className="text-center">
+                          <div className="max-w-sm text-center">
                             <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                             <p className="mt-2 text-sm font-medium">生成中…</p>
+                            {asset.generationError && (
+                              <>
+                                <p className="mt-3 text-sm font-medium text-foreground">
+                                  系统正在自动重试
+                                </p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {asset.generationError}
+                                </p>
+                              </>
+                            )}
                           </div>
                         </div>
                       ) : asset.status === 'failed' ? (

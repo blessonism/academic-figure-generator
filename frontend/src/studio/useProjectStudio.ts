@@ -213,6 +213,13 @@ function normalizePromptDraft(
   };
 }
 
+function getRetryingRenderDetail(assets: StudioRenderAsset[]): string | null {
+  return (
+    assets.find((asset) => asset.status === 'processing' && Boolean(asset.generationError))
+      ?.generationError ?? null
+  );
+}
+
 function canAccessStage(stage: StudioStage, snapshot: StudioStageSnapshot): boolean {
   if (stage === 'ingest') {
     return true;
@@ -900,12 +907,13 @@ export function useProjectStudio() {
 
     const renderingCount = renderAssets.filter((asset) => asset.status === 'processing').length;
     if (renderingCount > 0) {
+      const retryingDetail = getRetryingRenderDetail(renderAssets);
       nextTasks.push({
         id: 'render-running',
         type: '图片渲染',
         target: `${renderingCount} 张图片`,
         status: 'running',
-        detail: '后台正在生成图片，可在生成配图阶段查看进度。',
+        detail: retryingDetail || '后台正在生成图片，可在生成配图阶段查看进度。',
       });
     }
 

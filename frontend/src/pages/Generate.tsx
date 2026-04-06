@@ -23,6 +23,7 @@ export function Generate() {
    const [aspectRatio, setAspectRatio] = useState('16:9');
    const [isGenerating, setIsGenerating] = useState(false);
    const [error, setError] = useState<string | null>(null);
+   const [processingMessage, setProcessingMessage] = useState<string | null>(null);
    const [resultImage, setResultImage] = useState<{ url: string; filename: string; status: 'pending' | 'completed' | 'failed' } | null>(null);
    const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
    const blobUrlRef = useRef<string | null>(null);
@@ -77,17 +78,21 @@ export function Generate() {
                filename,
                status: 'completed',
             });
+            setProcessingMessage(null);
             setIsGenerating(false);
          } else if (status === 'failed') {
             setResultImage({ url: '', filename: 'academic-figure.png', status: 'failed' });
+            setProcessingMessage(null);
             setError(statusRes.data.generation_error || '图片生成失败，请稍后重试');
             setIsGenerating(false);
          } else {
+            setProcessingMessage(statusRes.data.generation_error || null);
             pollTimerRef.current = setTimeout(() => {
                void pollStatus(imageId);
             }, 3000);
          }
       } catch {
+         setProcessingMessage(null);
          setError('查询生成状态失败');
          setIsGenerating(false);
       }
@@ -99,6 +104,7 @@ export function Generate() {
       setIsGenerating(true);
       setResultImage({ url: '', filename: 'academic-figure.png', status: 'pending' });
       setError(null);
+      setProcessingMessage(null);
 
       try {
          const response = await api.post('/images/generate-direct', {
@@ -115,6 +121,7 @@ export function Generate() {
             : undefined;
          const msg = getApiErrorMessage(e, code === 'INSUFFICIENT_BALANCE' ? '余额不足，无法生成图片。' : '请求失败，请检查网络连接');
          setError(msg);
+         setProcessingMessage(null);
          setResultImage(null);
          setIsGenerating(false);
       }
@@ -194,6 +201,12 @@ export function Generate() {
                         <div className="text-center">
                            <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
                            <p className="text-sm text-muted-foreground mt-4">AI 正在努力绘制中，请耐心等待...</p>
+                           {processingMessage && (
+                              <div className="mt-4 max-w-sm rounded-md border bg-background/80 px-4 py-3 text-left">
+                                 <p className="text-sm font-medium text-foreground">系统正在自动重试</p>
+                                 <p className="mt-1 text-sm text-muted-foreground">{processingMessage}</p>
+                              </div>
+                           )}
                         </div>
                      ) : resultImage?.status === 'completed' && resultImage.url ? (
                         <img src={resultImage.url} alt="Generated result" className="rounded shadow-md max-h-full max-w-full object-contain" />

@@ -90,6 +90,42 @@ ASPECT_RATIO_MAP: dict[str, tuple[float, float]] = {
     "2:3":  (2.0, 3.0),
 }
 
+
+def _retry_or_mark_failed(
+    task: Task,
+    db: Session,
+    image_id: str,
+    exc: Exception,
+    failure_reason: str,
+    countdown: int,
+    retry_message: str | None = None,
+) -> None:
+    """在最后一次重试耗尽时先落库失败状态，再把异常抛回 Celery。"""
+    current_retries = getattr(getattr(task, "request", None), "retries", 0)
+    max_retries = getattr(task, "max_retries", 0)
+
+    if current_retries >= max_retries:
+        _mark_image_failed(db, image_id, failure_reason)
+        raise exc
+
+    if retry_message:
+        _mark_image_retrying(db, image_id, retry_message)
+
+    try:
+        raise task.retry(exc=exc, countdown=countdown)
+    except MaxRetriesExceededError:
+        _mark_image_failed(db, image_id, failure_reason)
+        raise
+
+
+def _build_retry_message(summary: str, retry_number: int, countdown: int) -> str:
+    """为 processing 阶段生成统一的自动重试提示。"""
+    normalized_summary = summary.strip() or "上游服务暂时不可用"
+    return (
+        f"{normalized_summary}，系统正在自动重试"
+        f"（第 {retry_number} 次，预计 {countdown} 秒后）"
+    )
+
 def _resolve_image_price_for_resolution(
     resolution: str,
     price_1k: Decimal,
@@ -129,7 +165,13 @@ def _get_pricing(db: Session, resolution: str) -> tuple[Decimal, Decimal]:
             p1 = Decimal(str(row2[0] if row2[0] is not None else fallback))
             p2 = Decimal(str(row2[1] if row2[1] is not None else fallback))
             p4 = Decimal(str(row2[2] if row2[2] is not None else fallback))
-            return usd_cny_rate, _resolve_image_price_for_resolution(resolution, p1, p2, p4, fallback)
+            return usd_cny_rate, _resolve_image_price_for_resolution(
+                resolution,
+                p1,
+                p2,
+                p4,
+                fallback,
+            )
     except Exception:
         # DB schema may not include columns yet; fallback to single price.
         pass
@@ -584,7 +626,10 @@ def generate_image_task(
         estimated_cost_usd = cny_to_usd(estimated_cost_cny, usd_cny_rate)
 
         usage_id = str(uuid.uuid4())
-        api_endpoint = f"{effective_api_base_url.rstrip('/')}/v1beta/models/{effective_model}:generateContent"
+        api_endpoint = (
+            f"{effective_api_base_url.rstrip('/')}/v1beta/models/"
+            f"{effective_model}:generateContent"
+        )
         db.execute(
             text(
                 """
@@ -655,15 +700,23 @@ def generate_image_task(
         _log_failed_usage(db, user_id, resolution, aspect_ratio, key_source,
                           billing_period, status_code, str(exc), api_endpoint=api_endpoint)
         if status_code == 429 or status_code >= 500:
-            try:
-                countdown = 60 * (2 ** self.request.retries)  # 60s, 120s, 240s
-                raise self.retry(exc=exc, countdown=countdown)
-            except MaxRetriesExceededError:
-                _mark_image_failed(
-                    db, image_id,
-                    f"NanoBanana API error {status_code} after max retries: {exc}",
-                )
-                raise
+            countdown = 60 * (2 ** self.request.retries)  # 60s, 120s, 240s
+            retry_message = _build_retry_message(
+                "上游服务限流，请稍候"
+                if status_code == 429
+                else "上游服务暂时不可用",
+                self.request.retries + 1,
+                countdown,
+            )
+            _retry_or_mark_failed(
+                self,
+                db,
+                image_id,
+                exc,
+                f"NanoBanana API error {status_code} after max retries: {exc}",
+                countdown,
+                retry_message=retry_message,
+            )
         else:
             _mark_image_failed(db, image_id, f"NanoBanana client error {status_code}: {exc}")
             raise
@@ -677,12 +730,21 @@ def generate_image_task(
         )
         _log_failed_usage(db, user_id, resolution, aspect_ratio, key_source,
                           billing_period, None, str(exc), api_endpoint=api_endpoint)
-        try:
-            countdown = 60 * (2 ** self.request.retries)
-            raise self.retry(exc=exc, countdown=countdown)
-        except MaxRetriesExceededError:
-            _mark_image_failed(db, image_id, f"Network error after max retries: {exc}")
-            raise
+        countdown = 60 * (2 ** self.request.retries)
+        retry_message = _build_retry_message(
+            "网络连接暂时异常",
+            self.request.retries + 1,
+            countdown,
+        )
+        _retry_or_mark_failed(
+            self,
+            db,
+            image_id,
+            exc,
+            f"Network error after max retries: {exc}",
+            countdown,
+            retry_message=retry_message,
+        )
 
     except S3Error as exc:
         logger.error("MinIO upload failed | image_id=%s | %s", image_id, exc)
@@ -724,6 +786,22 @@ def _mark_image_failed(db: Session, image_id: str, reason: str) -> None:
         logger.exception("Failed to mark image as failed | image_id=%s", image_id)
 
 
+def _mark_image_retrying(db: Session, image_id: str, reason: str) -> None:
+    """在自动重试期间保留 processing 状态，同时把可见提示写回数据库。"""
+    try:
+        db.execute(
+            text(
+                "UPDATE images SET generation_status = 'processing', "
+                "generation_error = :reason, "
+                "updated_at = :now WHERE id = :img_id"
+            ),
+            {"now": datetime.now(UTC), "img_id": image_id, "reason": reason[:2000]},
+        )
+        db.commit()
+    except Exception:
+        logger.exception("Failed to persist retry message | image_id=%s", image_id)
+
+
 def _log_failed_usage(
     db: Session,
     user_id: str,
@@ -758,7 +836,10 @@ def _log_failed_usage(
             {
                 "id": str(uuid.uuid4()),
                 "user_id": user_id,
-                "api_endpoint": (api_endpoint or f"{NANOBANANA_API_BASE}/v1beta/models/{NANOBANANA_MODEL}:generateContent")[:200],
+                "api_endpoint": (
+                    api_endpoint
+                    or f"{NANOBANANA_API_BASE}/v1beta/models/{NANOBANANA_MODEL}:generateContent"
+                )[:200],
                 "resolution": resolution,
                 "aspect_ratio": aspect_ratio,
                 "estimated_cost_usd": Decimal("0"),

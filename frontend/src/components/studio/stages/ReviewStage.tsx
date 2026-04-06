@@ -226,9 +226,15 @@ export function ReviewStage({
                 ) : (
                   <div className="flex h-full items-center justify-center">
                     {selectedVersion.status === 'processing' ? (
-                      <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
+                      <div className="flex max-w-sm flex-col items-center gap-3 text-center text-sm text-muted-foreground">
                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
                         <p>当前版本生成中，请稍候刷新。</p>
+                        {selectedVersion.generationError && (
+                          <div className="space-y-1">
+                            <p className="font-medium text-foreground">系统正在自动重试</p>
+                            <p>{selectedVersion.generationError}</p>
+                          </div>
+                        )}
                       </div>
                     ) : selectedVersion.status === 'failed' ? (
                       <div className="max-w-sm space-y-2 text-center text-sm">

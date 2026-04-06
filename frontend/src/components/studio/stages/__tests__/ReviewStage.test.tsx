@@ -71,4 +71,42 @@ describe('ReviewStage', () => {
 
     expect(onEditAsset).toHaveBeenCalledWith('image-1', '强化主干流程并弱化背景模块');
   });
+
+  it('shows retry guidance when the selected version is still processing', () => {
+    render(
+      <ReviewStage
+        {...createReviewStageProps()}
+        assets={[
+          {
+            id: 'draft-1',
+            promptId: 'draft-1',
+            title: '图 1',
+            figureType: 'overall_framework',
+            promptText: '请生成整体框架图',
+            finalVersionId: null,
+            versions: [
+              {
+                id: 'image-2',
+                imageId: 'image-2',
+                label: '精修 1',
+                status: 'processing',
+                createdAt: '2026-03-26T10:05:00Z',
+                previewUrl: null,
+                generationError: '上游服务暂时不可用，系统正在自动重试（第 2 次，预计 120 秒后）',
+                editInstruction: '细化主路径',
+                resolution: '2K',
+                aspectRatio: '16:9',
+                colorScheme: 'okabe-ito',
+                isPreviewLoading: false,
+                isDownloading: false,
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('系统正在自动重试')).toBeInTheDocument();
+    expect(screen.getByText('上游服务暂时不可用，系统正在自动重试（第 2 次，预计 120 秒后）')).toBeInTheDocument();
+  });
 });

@@ -134,4 +134,35 @@ describe('RenderStage', () => {
     expect(screen.getByRole('button', { name: '预览' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '下载' })).toBeInTheDocument();
   });
+
+  it('shows retry guidance when a processing asset already has generation error details', () => {
+    render(
+      <RenderStage
+        {...createRenderStageProps()}
+        assets={[
+          {
+            id: 'asset-processing',
+            promptId: 'draft-3',
+            title: '图 3',
+            figureType: 'methodology',
+            status: 'processing',
+            rawStatus: 'processing',
+            promptText: 'processing prompt',
+            latestImageId: 'image-3',
+            previewUrl: null,
+            generationError: '上游服务暂时不可用，系统正在自动重试（第 2 次，预计 120 秒后）',
+            effectiveSettings: {
+              resolution: '2K',
+              aspectRatio: '16:9',
+              colorScheme: 'okabe-ito',
+            },
+            overrideSettings: {},
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('系统正在自动重试')).toBeInTheDocument();
+    expect(screen.getByText('上游服务暂时不可用，系统正在自动重试（第 2 次，预计 120 秒后）')).toBeInTheDocument();
+  });
 });
