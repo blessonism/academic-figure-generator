@@ -38,6 +38,15 @@ function createRenderStageProps() {
 }
 
 describe('RenderStage', () => {
+  it('organizes render decisions into spec, cost, queue and submit panels', () => {
+    render(<RenderStage {...createRenderStageProps()} />);
+
+    expect(screen.getByRole('heading', { name: '输出规格' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '成本预估' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '资产队列' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '提交动作' })).toBeInTheDocument();
+  });
+
   it('shows shared defaults above result grid', () => {
     render(<RenderStage {...createRenderStageProps()} />);
 
@@ -100,7 +109,7 @@ describe('RenderStage', () => {
     await user.click(screen.getByRole('button', { name: '已完成' }));
 
     expect(screen.queryByText('图 1')).not.toBeInTheDocument();
-    expect(screen.getByText('图 2')).toBeInTheDocument();
+    expect(screen.getAllByText('图 2').length).toBeGreaterThan(0);
   });
 
   it('keeps retry preview and download actions for completed assets', () => {

@@ -160,10 +160,10 @@ export function ReviewStage({
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-        <Card className="min-h-[540px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+        <Card className="min-h-[540px] xl:col-span-2 2xl:col-span-1">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">结果清单</CardTitle>
+            <h2 className="text-lg font-semibold text-slate-950">结果清单</h2>
           </CardHeader>
           <CardContent className="px-0 pb-0">
             <ScrollArea className="h-[460px]">
@@ -180,14 +180,17 @@ export function ReviewStage({
                       }`}
                       onClick={() => setManualSelectedAssetId(asset.id)}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 space-y-1">
-                          <p className="truncate text-sm font-medium">{asset.title}</p>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="line-clamp-2 break-words text-sm font-medium leading-5">{asset.title}</p>
                           <p className="text-xs text-muted-foreground">
                             {assetLatestVersion ? `${asset.versions.length} 个版本` : '暂无版本'}
                           </p>
                         </div>
-                        <Badge variant={getVersionStatusVariant(assetLatestVersion?.status ?? 'idle')}>
+                        <Badge
+                          variant={getVersionStatusVariant(assetLatestVersion?.status ?? 'idle')}
+                          className="shrink-0 self-start"
+                        >
                           {getVersionStatusLabel(assetLatestVersion?.status ?? 'idle')}
                         </Badge>
                       </div>
@@ -202,16 +205,19 @@ export function ReviewStage({
           </CardContent>
         </Card>
 
-        <Card className="min-h-[540px]">
+        <Card className="min-h-[540px] min-w-0">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-1">
-                <CardTitle className="text-base">{selectedAsset.title}</CardTitle>
-                <p className="text-sm text-muted-foreground">{selectedAsset.figureType}</p>
+            <div className="space-y-3">
+              <h2 className="text-lg font-semibold text-slate-950">当前版本详情</h2>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 space-y-1">
+                  <CardTitle className="line-clamp-2 break-words text-base leading-6">{selectedAsset.title}</CardTitle>
+                  <p className="text-sm text-muted-foreground">{selectedAsset.figureType}</p>
+                </div>
+                <Badge variant={getVersionStatusVariant(selectedVersion.status)} className="shrink-0 self-start sm:self-auto">
+                  {getVersionStatusLabel(selectedVersion.status)}
+                </Badge>
               </div>
-              <Badge variant={getVersionStatusVariant(selectedVersion.status)}>
-                {getVersionStatusLabel(selectedVersion.status)}
-              </Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -301,9 +307,9 @@ export function ReviewStage({
           </CardContent>
         </Card>
 
-        <Card className="min-h-[540px]">
+        <Card className="min-h-[540px] min-w-0">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">版本历史</CardTitle>
+            <h2 className="text-lg font-semibold text-slate-950">精修动作</h2>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -395,6 +401,22 @@ export function ReviewStage({
                   )}
                 </Button>
               </div>
+
+              <div className="rounded-xl border bg-muted/20 p-4">
+                <h3 className="text-base font-semibold text-slate-950">交付摘要</h3>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg border bg-background px-3 py-2">
+                    <p className="text-xs text-muted-foreground">当前选中版本</p>
+                    <p className="text-sm font-medium">{selectedVersion.label}</p>
+                  </div>
+                  <div className="rounded-lg border bg-background px-3 py-2">
+                    <p className="text-xs text-muted-foreground">最终稿状态</p>
+                    <p className="text-sm font-medium">
+                      {selectedAsset.finalVersionId === selectedVersion.imageId ? '已标记' : '未标记'}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -416,17 +438,17 @@ export function ReviewStage({
                         }))
                       }
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 space-y-1">
-                          <div className="flex items-center gap-2">
-                            <p className="truncate text-sm font-medium">{version.label}</p>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-start gap-2">
+                            <p className="line-clamp-2 break-words text-sm font-medium leading-5">{version.label}</p>
                             {selectedAsset.finalVersionId === version.imageId && (
-                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground">{formatVersionTime(version.createdAt)}</p>
                         </div>
-                        <Badge variant={getVersionStatusVariant(version.status)}>
+                        <Badge variant={getVersionStatusVariant(version.status)} className="shrink-0 self-start">
                           {getVersionStatusLabel(version.status)}
                         </Badge>
                       </div>

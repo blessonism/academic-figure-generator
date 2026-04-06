@@ -29,13 +29,22 @@ export function StudioStageNav({ currentStage, stages, onStageSelect }: StudioSt
       {stages.map((stage) => {
         const isCurrent = stage.id === currentStage;
         const isBlocked = stage.status === 'blocked';
+        const statusLabel =
+          stage.status === 'blocked'
+            ? '待解锁'
+            : stage.status === 'complete'
+              ? '已完成'
+              : stage.status === 'current'
+                ? '当前阶段'
+                : '可查看';
         const content = (
           <CardContent className="space-y-2 p-4">
             <div className="flex items-center justify-between gap-3">
               <p className="font-medium">{stage.label}</p>
-              <span className="text-xs uppercase tracking-wide text-muted-foreground">{stage.status}</span>
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">{statusLabel}</span>
             </div>
 
+            {stage.objective ? <p className="text-sm text-muted-foreground">{stage.objective}</p> : null}
             {stage.reason ? <p className="text-sm text-muted-foreground">{stage.reason}</p> : null}
             {stage.nextAction ? <p className="text-sm font-medium text-foreground">{stage.nextAction}</p> : null}
           </CardContent>

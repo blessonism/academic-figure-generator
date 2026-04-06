@@ -89,7 +89,7 @@ describe('ProjectStudioPage', () => {
     mockUseProjectStudio.mockReturnValue(createStudioState());
   });
 
-  it('renders studio shell entry for /projects/:id', () => {
+  it('renders v2 style studio frame for /projects/:id', () => {
     render(
       <MemoryRouter initialEntries={['/projects/42']}>
         <Routes>
@@ -98,7 +98,8 @@ describe('ProjectStudioPage', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Studio')).toBeInTheDocument();
+    expect(screen.getByText('研究型工作台')).toBeInTheDocument();
+    expect(screen.getByText('专业摘要面板')).toBeInTheDocument();
   });
 
   it('renders prompt stage when prompt drafts are available', () => {
@@ -134,9 +135,9 @@ describe('ProjectStudioPage', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('整体架构图')).toBeInTheDocument();
+    expect(screen.getAllByText('整体架构图').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: '接受' })).toBeInTheDocument();
-    expect(screen.getByText(/已确认范围/)).toBeInTheDocument();
+    expect(screen.getByText('已确认范围')).toBeInTheDocument();
   });
 
   it('renders render stage when accepted drafts are ready for image generation', () => {
@@ -189,7 +190,7 @@ describe('ProjectStudioPage', () => {
     );
 
     expect(screen.getByText('本次默认参数')).toBeInTheDocument();
-    expect(screen.getByText('整体架构图')).toBeInTheDocument();
+    expect(screen.getAllByText('整体架构图').length).toBeGreaterThan(0);
   });
 
   it('renders review stage when completed images are ready for polish delivery', () => {

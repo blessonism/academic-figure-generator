@@ -1,8 +1,23 @@
 import { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore, type User } from '../store/authStore';
-import { LogOut, LayoutDashboard, Palette, Activity, Settings, Zap, Shield, Users, Menu, X, type LucideIcon } from 'lucide-react';
+import {
+    LogOut,
+    LayoutDashboard,
+    Palette,
+    Activity,
+    Settings,
+    Zap,
+    Shield,
+    Users,
+    Menu,
+    X,
+    ChevronsLeft,
+    ChevronsRight,
+    type LucideIcon,
+} from 'lucide-react';
 import { Button } from './ui/button';
+import { cn } from '@/lib/utils';
 
 type NavItem = {
     name: string;
@@ -16,8 +31,11 @@ type SidebarContentProps = {
     user: User | null;
     displayName: string;
     initials: string;
+    collapsed?: boolean;
+    showDesktopToggle?: boolean;
     onNavigate: () => void;
     onLogout: () => void;
+    onToggleCollapsed?: () => void;
 };
 
 function SidebarContent({
@@ -26,29 +44,50 @@ function SidebarContent({
     user,
     displayName,
     initials,
+    collapsed = false,
+    showDesktopToggle = false,
     onNavigate,
     onLogout,
+    onToggleCollapsed,
 }: SidebarContentProps) {
     return (
         <div className="flex flex-col h-full">
-            {/* Logo + App Name */}
-            <div className="px-4 py-5 flex items-center space-x-3">
+            <div className={cn('px-3 py-4 flex items-center', collapsed ? 'flex-col gap-3' : 'gap-3')}>
                 <Link
                     to="/projects"
-                    className="flex items-center space-x-3 group"
+                    className={cn(
+                        'group rounded-lg transition-colors',
+                        collapsed ? 'flex items-center justify-center' : 'flex flex-1 items-center space-x-3 min-w-0',
+                    )}
                     onClick={onNavigate}
+                    aria-label="科研配图生成器"
+                    title="科研配图生成器"
                 >
                     <img src="/logo.jpg" alt="Logo" className="w-8 h-8 rounded-lg flex-shrink-0" />
-                    <span className="font-semibold text-sm text-foreground leading-tight group-hover:text-primary transition-colors">
-                        科研配图生成器
-                    </span>
+                    {!collapsed ? (
+                        <span className="font-semibold text-sm text-foreground leading-tight group-hover:text-primary transition-colors truncate">
+                            科研配图生成器
+                        </span>
+                    ) : null}
                 </Link>
+
+                {showDesktopToggle ? (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={onToggleCollapsed}
+                        aria-label={collapsed ? '展开导航栏' : '收起导航栏'}
+                        title={collapsed ? '展开导航栏' : '收起导航栏'}
+                        className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-background/70"
+                    >
+                        {collapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
+                    </Button>
+                ) : null}
             </div>
 
-            {/* Divider */}
             <div className="mx-3 mb-2 h-px bg-border/60" />
 
-            {/* Nav Items */}
             <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
                 {navItems.map((item) => {
                     const isActive = pathname.startsWith(item.path);
@@ -57,14 +96,15 @@ function SidebarContent({
                             key={item.path}
                             to={item.path}
                             onClick={onNavigate}
-                            className={`
-                                flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                                transition-all duration-150 group relative
-                                ${isActive
+                            aria-label={item.name}
+                            title={item.name}
+                            className={cn(
+                                'group relative flex items-center rounded-lg text-sm font-medium transition-all duration-150',
+                                collapsed ? 'justify-center px-2 py-2.5' : 'space-x-3 px-3 py-2.5',
+                                isActive
                                     ? 'bg-background text-foreground shadow-sm border border-border/50'
-                                    : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
-                                }
-                            `}
+                                    : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
+                            )}
                         >
                             {isActive && (
                                 <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-full" />
@@ -74,19 +114,16 @@ function SidebarContent({
                                     isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'
                                 }`}
                             />
-                            <span>{item.name}</span>
+                            {!collapsed ? <span>{item.name}</span> : null}
                         </Link>
                     );
                 })}
             </nav>
 
-            {/* User Section */}
             <div className="mt-auto">
                 <div className="mx-3 mb-3 h-px bg-border/60" />
                 <div className="px-3 pb-4 space-y-1">
-                    {/* User Identity */}
-                    <div className="flex items-center space-x-3 px-2 py-2 rounded-lg">
-                        {/* Avatar */}
+                    <div className={cn('px-2 py-2 rounded-lg', collapsed ? 'flex justify-center' : 'flex items-center space-x-3')}>
                         {user?.linuxdo_avatar_url ? (
                             <img
                                 src={user.linuxdo_avatar_url}
@@ -100,19 +137,25 @@ function SidebarContent({
                                 </span>
                             </div>
                         )}
-                        <span className="text-sm font-medium text-foreground truncate flex-1 min-w-0">
-                            {displayName}
-                        </span>
+                        {!collapsed ? (
+                            <span className="text-sm font-medium text-foreground truncate flex-1 min-w-0">
+                                {displayName}
+                            </span>
+                        ) : null}
                     </div>
-                    {/* Logout */}
                     <Button
                         variant="ghost"
-                        size="sm"
+                        size={collapsed ? 'icon' : 'sm'}
                         onClick={onLogout}
-                        className="w-full justify-start px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/5 text-sm font-medium"
+                        aria-label="退出登录"
+                        title="退出登录"
+                        className={cn(
+                            'text-muted-foreground hover:text-destructive hover:bg-destructive/5 text-sm font-medium',
+                            collapsed ? 'w-full justify-center px-0' : 'w-full justify-start px-2',
+                        )}
                     >
-                        <LogOut className="w-4 h-4 mr-3 flex-shrink-0" />
-                        退出登录
+                        <LogOut className={cn('w-4 h-4 flex-shrink-0', collapsed ? '' : 'mr-3')} />
+                        {!collapsed ? '退出登录' : null}
                     </Button>
                 </div>
             </div>
@@ -125,7 +168,8 @@ export function Layout() {
     const user = useAuthStore((state) => state.user);
     const navigate = useNavigate();
     const location = useLocation();
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+    const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
 
     const handleLogout = () => {
         logout();
@@ -151,41 +195,47 @@ export function Layout() {
 
     return (
         <div className="min-h-screen flex bg-muted/30">
-            {/* Desktop Sidebar */}
-            <aside className="hidden md:flex flex-col w-[260px] flex-shrink-0 fixed inset-y-0 left-0 z-20 bg-muted/50 border-r border-border/60">
+            <aside
+                data-sidebar-kind="desktop"
+                data-collapsed={desktopSidebarCollapsed ? 'true' : 'false'}
+                className={cn(
+                    'hidden md:flex flex-col flex-shrink-0 fixed inset-y-0 left-0 z-20 bg-muted/50 border-r border-border/60 transition-[width] duration-200',
+                    desktopSidebarCollapsed ? 'w-20' : 'w-[260px]',
+                )}
+            >
                 <SidebarContent
                     navItems={navItems}
                     pathname={location.pathname}
                     user={user}
                     displayName={displayName}
                     initials={initials}
-                    onNavigate={() => setSidebarOpen(false)}
+                    collapsed={desktopSidebarCollapsed}
+                    showDesktopToggle
+                    onNavigate={() => {}}
                     onLogout={handleLogout}
+                    onToggleCollapsed={() => setDesktopSidebarCollapsed((currentValue) => !currentValue)}
                 />
             </aside>
 
-            {/* Mobile Overlay */}
-            {sidebarOpen && (
+            {mobileSidebarOpen && (
                 <div
                     className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm md:hidden"
-                    onClick={() => setSidebarOpen(false)}
+                    onClick={() => setMobileSidebarOpen(false)}
                 />
             )}
 
-            {/* Mobile Sidebar Drawer */}
             <aside
                 className={`
                     fixed inset-y-0 left-0 z-40 w-[260px] flex flex-col
                     bg-muted/95 backdrop-blur border-r border-border/60
                     transform transition-transform duration-200 ease-in-out
                     md:hidden
-                    ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+                    ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
                 `}
             >
-                {/* Mobile close button */}
                 <button
                     className="absolute top-4 right-3 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
-                    onClick={() => setSidebarOpen(false)}
+                    onClick={() => setMobileSidebarOpen(false)}
                     aria-label="Close sidebar"
                 >
                     <X className="w-4 h-4" />
@@ -196,18 +246,21 @@ export function Layout() {
                     user={user}
                     displayName={displayName}
                     initials={initials}
-                    onNavigate={() => setSidebarOpen(false)}
+                    onNavigate={() => setMobileSidebarOpen(false)}
                     onLogout={handleLogout}
                 />
             </aside>
 
-            {/* Main Content */}
-            <div className="flex-1 flex flex-col md:ml-[260px] min-w-0">
-                {/* Mobile Top Bar */}
+            <div
+                className={cn(
+                    'flex-1 flex flex-col min-w-0 transition-[margin] duration-200',
+                    desktopSidebarCollapsed ? 'md:ml-20' : 'md:ml-[260px]',
+                )}
+            >
                 <div className="md:hidden flex items-center px-4 h-14 border-b border-border/60 bg-background sticky top-0 z-10">
                     <button
                         className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors mr-3"
-                        onClick={() => setSidebarOpen(true)}
+                        onClick={() => setMobileSidebarOpen(true)}
                         aria-label="Open sidebar"
                     >
                         <Menu className="w-5 h-5" />
@@ -218,7 +271,6 @@ export function Layout() {
                     </Link>
                 </div>
 
-                {/* Page Content */}
                 <main className="flex-1 px-6 py-8 md:px-8 bg-background min-h-screen">
                     <Outlet />
                 </main>
