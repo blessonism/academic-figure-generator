@@ -218,13 +218,15 @@ ENCRYPTION_MASTER_KEY=your_64_char_hex_string
 
 ### 3. 启动服务
 
-**开发模式**（带热重载）：
+**开发模式**（前端 HMR + 后端热重载）：
 
 ```bash
 make dev
 # 或
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
+
+> 说明：`.env` 默认保持偏生产的安全配置；开发模式会通过 `docker-compose.dev.yml` 临时覆盖为 `APP_ENV=development`、`DEBUG=true`，因此 `/docs` 仅在开发编排下可访问。
 
 **生产模式**：
 
@@ -240,6 +242,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 |------|------|
 | 应用首页 | http://localhost:8082 |
 | API 文档 (Swagger) | http://localhost:8082/docs（仅开发模式） |
+| 后端直连 | http://localhost:8000 |
 | MinIO 控制台 | http://localhost:9001 |
 
 ### 5. 初始配置
@@ -290,6 +293,7 @@ make help           # 查看所有可用命令
 # 开发
 make dev            # 启动开发环境（前台运行，带日志）
 make up             # 启动开发环境（后台运行）
+make dev-backend    # 仅启动后端/数据库/MinIO，便于本机前端调试
 make down           # 停止服务
 make logs           # 查看日志
 
@@ -302,6 +306,7 @@ make lint           # 运行 linter
 make format         # 自动格式化代码
 make test           # 运行测试
 make test-cov       # 运行测试 + 覆盖率报告
+make check          # 统一执行后端 + 前端的 lint/test/build 检查
 
 # 生产
 make prod-up        # 启动生产环境
@@ -446,6 +451,8 @@ ruff format app/
 ### 前端开发
 
 ```bash
+make dev-backend  # 或 make dev，前者更适合只在宿主机跑前端
+
 cd frontend
 npm install
 npm run dev     # 启动开发服务器 (localhost:5173)
@@ -453,7 +460,9 @@ npm run build   # 生产构建
 npm run lint    # ESLint 检查
 ```
 
-前端开发服务器会自动将 `/api` 请求代理到 `localhost:8000`。
+`npm run dev` 会自动将 `/api`、`/docs`、`/redoc` 和 `/openapi.json`
+代理到 `localhost:8000`，因此只要先启动 `make dev-backend`，
+宿主机前端开发链路就可以直接联调后端。
 
 ## 许可证
 

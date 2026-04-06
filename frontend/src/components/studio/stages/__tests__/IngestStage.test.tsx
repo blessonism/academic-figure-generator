@@ -3,6 +3,28 @@ import { render, screen } from '@/test/render';
 import { IngestStage } from '@/components/studio/stages/IngestStage';
 
 describe('IngestStage', () => {
+  it('organizes ingest experience into four professional panels', () => {
+    render(
+      <IngestStage
+        documents={[]}
+        isUploading={false}
+        uploadProgress={0}
+        hasOcrConfig={true}
+        ocrLoading={{}}
+        statusMessage={null}
+        onUploadClick={() => {}}
+        onFileChange={() => {}}
+        onTriggerOcr={() => {}}
+        onDownloadMarkdown={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: '输入来源' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '上传与解析状态' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '已识别文档列表' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '就绪摘要' })).toBeInTheDocument();
+  });
+
   it('shows setup checklist when OCR is unavailable', () => {
     render(
       <IngestStage

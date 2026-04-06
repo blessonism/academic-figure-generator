@@ -24,3 +24,5 @@
 # Logs
 *.log
 
+# Agent runtime artifacts
+.superpowers/

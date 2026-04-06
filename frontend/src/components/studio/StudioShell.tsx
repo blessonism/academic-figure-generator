@@ -11,17 +11,18 @@ interface StudioShellProps {
 
 export function StudioShell({ header, stageNav, sidebar, main, inspector, tasks }: StudioShellProps) {
   return (
-    <section className="space-y-4">
+    <section className="space-y-5">
       <div>{header}</div>
       <div>{stageNav}</div>
 
-      <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-        <aside className="space-y-4">{sidebar}</aside>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <main className="min-w-0">{main}</main>
-        <aside className="space-y-4">{inspector}</aside>
+        <aside className="space-y-4">
+          {sidebar}
+          {inspector}
+          {tasks}
+        </aside>
       </div>
-
-      <div>{tasks}</div>
     </section>
   );
 }

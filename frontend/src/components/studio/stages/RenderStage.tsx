@@ -107,6 +107,30 @@ function getResolutionPriceText(
   return imagePricing.priceCnyDefault;
 }
 
+function StagePanel({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card className={className}>
+      <CardContent className="space-y-4 p-5">
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+          <p className="text-sm leading-6 text-slate-500">{description}</p>
+        </div>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
 function RenderParameterSummary({
   title,
   description,
@@ -201,110 +225,127 @@ export function RenderStage({
     colorSchemeOptions.length > 0
       ? colorSchemeOptions
       : [{ value: sessionDefaults.colorScheme, label: sessionDefaults.colorScheme }];
+  const estimatedDefaultPrice = getResolutionPriceText(sessionDefaults.resolution, imagePricing);
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">生成配图</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-            先统一本次出图默认参数，再按需为单项补覆盖值，避免每张图都重复填写相同设置。
-          </div>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <StagePanel
+          title="输出规格"
+          description="先统一本轮输出规格，再决定是否为单张资产追加覆盖值。"
+        >
+          <RenderParameterSummary
+            title="项目默认参数"
+            description="当前项目和账号设置推导出的基础默认值。"
+            parameters={projectDefaults}
+            imagePricing={imagePricing}
+          />
 
-          {statusMessage && (
-            <div className="rounded-lg border p-3 text-sm">
-              <p className="font-medium">状态更新</p>
-              <p className="mt-1 text-muted-foreground">{statusMessage.detail}</p>
+          <div className="rounded-xl border p-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">本次默认参数</p>
+              <p className="text-xs text-muted-foreground">
+                只影响当前会话。未设置单项覆盖的结果卡片都会继承这里。
+              </p>
             </div>
-          )}
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <RenderParameterSummary
-              title="项目默认参数"
-              description="当前项目和账号设置推导出的基础默认值。"
-              parameters={projectDefaults}
-              imagePricing={imagePricing}
-            />
-
-            <div className="rounded-xl border p-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">本次默认参数</p>
-                <p className="text-xs text-muted-foreground">
-                  只影响当前会话。未设置单项覆盖的结果卡片都会继承这里。
-                </p>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">分辨率</p>
+                <Select
+                  value={sessionDefaults.resolution}
+                  onValueChange={(value) => onSessionDefaultsChange('resolution', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RESOLUTION_OPTIONS.map((resolution) => (
+                      <SelectItem key={resolution} value={resolution}>
+                        {resolution}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">分辨率</p>
-                  <Select
-                    value={sessionDefaults.resolution}
-                    onValueChange={(value) => onSessionDefaultsChange('resolution', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {RESOLUTION_OPTIONS.map((resolution) => (
-                        <SelectItem key={resolution} value={resolution}>
-                          {resolution}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">比例</p>
-                  <Select
-                    value={sessionDefaults.aspectRatio}
-                    onValueChange={(value) => onSessionDefaultsChange('aspectRatio', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ASPECT_RATIO_OPTIONS.map((aspectRatio) => (
-                        <SelectItem key={aspectRatio} value={aspectRatio}>
-                          {aspectRatio}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">配色</p>
-                  <Select
-                    value={sessionDefaults.colorScheme}
-                    onValueChange={(value) => onSessionDefaultsChange('colorScheme', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableColorSchemeOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">比例</p>
+                <Select
+                  value={sessionDefaults.aspectRatio}
+                  onValueChange={(value) => onSessionDefaultsChange('aspectRatio', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ASPECT_RATIO_OPTIONS.map((aspectRatio) => (
+                      <SelectItem key={aspectRatio} value={aspectRatio}>
+                        {aspectRatio}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              {getResolutionPriceText(sessionDefaults.resolution, imagePricing) !== null && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  当前会话默认价格约为 ¥
-                  {getResolutionPriceText(sessionDefaults.resolution, imagePricing)?.toFixed(2)}
-                  /张。
-                </p>
-              )}
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">配色</p>
+                <Select
+                  value={sessionDefaults.colorScheme}
+                  onValueChange={(value) => onSessionDefaultsChange('colorScheme', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableColorSchemeOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {estimatedDefaultPrice !== null && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                当前会话默认价格约为 ¥{estimatedDefaultPrice.toFixed(2)}/张。
+              </p>
+            )}
+          </div>
+        </StagePanel>
+
+        <StagePanel
+          title="成本预估"
+          description="规格变化会直接影响成本和处理规模，先确认预算边界再进入提交。"
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-2xl border bg-slate-50 p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">当前筛选结果</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900">{visibleAssets.length} 张</p>
+            </div>
+            <div className="rounded-2xl border bg-slate-50 p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">默认单价</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900">
+                {estimatedDefaultPrice !== null ? `¥${estimatedDefaultPrice.toFixed(2)}` : '待配置'}
+              </p>
             </div>
           </div>
 
+          <div className="rounded-2xl border border-dashed p-4 text-sm text-slate-600">
+            {estimatedDefaultPrice !== null
+              ? `按当前默认规格估算，本轮批量出图的基础成本约为 ¥${(
+                  estimatedDefaultPrice * Math.max(assets.length, 1)
+                ).toFixed(2)}。`
+              : '当前价格信息不可用，请先确认服务端价格配置。'}
+          </div>
+        </StagePanel>
+
+        <StagePanel
+          title="资产队列"
+          description="先查看这一轮真正待处理的资产规模，再按状态筛选结果列表。"
+        >
           <div className="flex flex-wrap gap-2">
             {(['all', 'processing', 'completed', 'failed'] as RenderFilter[]).map((candidate) => (
               <Button
@@ -321,8 +362,49 @@ export function RenderStage({
               </Button>
             ))}
           </div>
-        </CardContent>
-      </Card>
+
+          <div className="space-y-3">
+            {assets.length === 0 ? (
+              <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+                当前还没有待出图资产，请先在草案阶段接受至少一条草案。
+              </div>
+            ) : (
+              visibleAssets.map((asset) => (
+                <div key={`queue-${asset.id}`} className="rounded-2xl border bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{asset.title}</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {asset.effectiveSettings.resolution} · {asset.effectiveSettings.aspectRatio} ·{' '}
+                        {asset.effectiveSettings.colorScheme}
+                      </p>
+                    </div>
+                    <Badge variant={getRenderStatusVariant(asset.status)}>
+                      {getRenderStatusLabel(asset.status)}
+                    </Badge>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </StagePanel>
+
+        <StagePanel
+          title="提交动作"
+          description="把本轮默认参数、预算和队列状态统一收口，再继续到每张资产的生成动作。"
+        >
+          {statusMessage ? (
+            <div className="rounded-lg border p-3 text-sm">
+              <p className="font-medium">状态更新</p>
+              <p className="mt-1 text-muted-foreground">{statusMessage.detail}</p>
+            </div>
+          ) : null}
+
+          <div className="rounded-2xl border border-dashed p-4 text-sm text-slate-600">
+            当前阶段建议先检查资产队列与成本预估，再到下方结果列表逐条发起生成或重试。
+          </div>
+        </StagePanel>
+      </div>
 
       <Card>
         <CardHeader className="pb-3">

@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import type { ReactElement } from 'react';
-import { ChevronLeft, ChevronRight, Eye, FileText, Sparkles } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { ChevronLeft, ChevronRight, Eye, FileText } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import type {
   StudioDocumentSection,
   StudioScopeMode,
@@ -31,6 +31,30 @@ interface SectionNode {
   level: number;
   preview: string;
   children: SectionNode[];
+}
+
+function StagePanel({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card className={className}>
+      <CardContent className="space-y-4 p-5">
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+          <p className="text-sm leading-6 text-slate-500">{description}</p>
+        </div>
+        {children}
+      </CardContent>
+    </Card>
+  );
 }
 
 const SCOPE_PRESET_OPTIONS: Array<{
@@ -225,7 +249,7 @@ export function ScopeStage({
     onPresetSelect(presetId);
   };
 
-  const renderNodes = (nodes: SectionNode[], depth: number): ReactElement[] =>
+  const renderNodes = (nodes: SectionNode[], depth: number): ReactNode[] =>
     nodes.map((node) => {
       const key = `node-${node.idx}`;
       const isChecked = selectedSet.has(node.idx);
@@ -273,258 +297,276 @@ export function ScopeStage({
     });
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">确认范围</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-            先决定本次生成草案要参考论文的哪一部分，只有在需要精细控制时再展开章节树。
+    <div className="grid gap-5 xl:grid-cols-2">
+      <StagePanel
+        title="输入来源确认"
+        description="先确认当前论文和章节规模，保证后续范围设计围绕正确的输入材料进行。"
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border bg-slate-50 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">当前文档</p>
+            <p className="mt-2 text-sm font-semibold text-slate-900">{documentName ?? '暂无可用文档'}</p>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <Badge variant="outline">{documentName ?? '暂无可用文档'}</Badge>
-            <span>章节总数 {sections.length}</span>
-            <span>已选章节 {selectedSectionIndices.length}</span>
-            <span>预估参考长度 ≈ {(selectedCharCount / 500).toFixed(0)} 段落</span>
+          <div className="rounded-2xl border bg-slate-50 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">章节规模</p>
+            <p className="mt-2 text-sm font-semibold text-slate-900">
+              {sections.length} 个章节 / 已选 {selectedSectionIndices.length} 个
+            </p>
           </div>
+        </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {SCOPE_PRESET_OPTIONS.map((option) => {
-              const isActive = selectedPresetId === option.id;
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <Badge variant="outline">{documentName ?? '暂无可用文档'}</Badge>
+          <span>预估参考长度 ≈ {(selectedCharCount / 500).toFixed(0)} 段落</span>
+        </div>
+      </StagePanel>
 
-              return (
-                <button
-                  key={option.id}
+      <StagePanel
+        title="推荐范围"
+        description="先用系统推荐或预设方案快速收敛，再决定是否进入更细的手动章节微调。"
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          {SCOPE_PRESET_OPTIONS.map((option) => {
+            const isActive = selectedPresetId === option.id;
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                className={`rounded-xl border p-4 text-left transition-colors ${
+                  isActive
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : 'border-border hover:border-primary/40 hover:bg-muted/40'
+                }`}
+                onClick={() => handlePresetClick(option.id)}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium">{option.label}</span>
+                  {isActive && <Badge variant="secondary">当前选择</Badge>}
+                </div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">{option.description}</p>
+              </button>
+            );
+          })}
+        </div>
+      </StagePanel>
+
+      <StagePanel
+        title="手动微调"
+        description="当推荐范围不够细时，再使用章节树和内容预览做精细控制。"
+        className="xl:col-span-1"
+      >
+        {mode === 'preset' ? (
+          <div className="space-y-3">
+            <div className="rounded-2xl border bg-slate-50 p-4 text-sm text-slate-600">
+              当前先采用预设范围。若需要逐章细调，请切换到“自定义范围”后再展开章节树。
+            </div>
+            <div className="rounded-2xl border border-dashed p-4 text-sm text-slate-500">
+              预设模式下不会展示复杂章节树，目的是让你先完成快速范围收敛。
+            </div>
+          </div>
+        ) : sections.length === 0 ? (
+          <p className="text-sm text-muted-foreground">暂无可用章节结构，请先返回上一步完成论文解析。</p>
+        ) : (
+          <div className="flex min-h-[420px] flex-col gap-0">
+            <div className="flex items-center justify-between gap-2 border-b px-1 pb-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button
                   type="button"
-                  className={`rounded-xl border p-4 text-left transition-colors ${
-                    isActive
-                      ? 'border-primary bg-primary/5 shadow-sm'
-                      : 'border-border hover:border-primary/40 hover:bg-muted/40'
-                  }`}
-                  onClick={() => handlePresetClick(option.id)}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSelectedSectionIndicesChange(sections.map((_, index) => index))}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">{option.label}</span>
-                    {isActive && <Badge variant="secondary">当前选择</Badge>}
-                  </div>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{option.description}</p>
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {mode === 'preset' ? (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="h-4 w-4 text-primary" />
-              当前范围方案
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="rounded-lg border p-3">
-              <p className="font-medium">{selectedPreset?.label ?? '整篇论文'}</p>
-              <p className="mt-1 text-muted-foreground">
-                {selectedPreset?.description ?? '使用整篇论文作为默认参考范围。'}
-              </p>
-            </div>
-            <div className="rounded-lg border border-dashed p-3 text-muted-foreground">
-              当前先采用预设范围，等进入草案阶段后再逐步拆出更细的来源解释与推荐理由。
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">自定义范围</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {sections.length === 0 ? (
-              <p className="text-sm text-muted-foreground">暂无可用章节结构，请先返回上一步完成论文解析。</p>
-            ) : (
-              <div className="flex min-h-[420px] flex-col gap-0">
-                <div className="flex items-center justify-between gap-2 border-b px-1 pb-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onSelectedSectionIndicesChange(sections.map((_, index) => index))}
-                    >
-                      全选
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onSelectedSectionIndicesChange([])}
-                    >
-                      全不选
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const nextCollapsed: Record<string, boolean> = {};
-                        for (const root of roots) {
-                          nextCollapsed[`sec-${root.idx}`] = false;
-                        }
-                        setCollapsedGroupOverrides(nextCollapsed);
-                      }}
-                    >
-                      展开全部
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const nextCollapsed: Record<string, boolean> = {};
-                        for (const root of roots) {
-                          nextCollapsed[`sec-${root.idx}`] = true;
-                        }
-                        setCollapsedGroupOverrides(nextCollapsed);
-                      }}
-                    >
-                      折叠全部
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 border-b px-1 py-1.5 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <FileText className="h-3 w-3" />
-                    章节树
-                  </span>
-                  <span className="ml-auto font-medium text-foreground">
-                    {selectedSectionIndices.length}/{sections.length} 段已选
-                  </span>
-                  {selectedCharCount > 0 && <span>≈ {(selectedCharCount / 500).toFixed(0)} 段落</span>}
-                </div>
-
-                <div className="flex min-h-0 flex-1 overflow-hidden">
-                  <div className="w-[55%] space-y-0.5 overflow-y-auto border-r py-2 pr-1">
-                    {roots.map((chapter) => {
-                      const indices = collectIndices(chapter);
-                      const selectedCount = indices.reduce(
-                        (count, index) => count + (selectedSet.has(index) ? 1 : 0),
-                        0,
-                      );
-                      const allChecked = selectedCount === indices.length && indices.length > 0;
-                      const partiallyChecked = selectedCount > 0 && selectedCount < indices.length;
-                      const groupKey = `sec-${chapter.idx}`;
-                      const isCollapsed = collapsedGroups[groupKey] ?? true;
-                      const isActive = activePreviewIdx === chapter.idx;
-
-                      return (
-                        <div key={groupKey}>
-                          <div
-                            className={`flex items-center gap-2 rounded px-2 py-2 transition-colors ${
-                              isActive ? 'border border-primary/30 bg-primary/10' : 'hover:bg-muted/50'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              className="shrink-0 accent-primary"
-                              checked={allChecked}
-                              ref={(element) => {
-                                if (element) {
-                                  element.indeterminate = partiallyChecked;
-                                }
-                              }}
-                              onChange={(event) => selectMany(indices, event.target.checked)}
-                              onClick={(event) => event.stopPropagation()}
-                            />
-                            <button
-                              type="button"
-                              className={`min-w-0 flex-1 truncate text-left text-sm font-semibold ${
-                                isActive ? 'text-primary' : ''
-                              }`}
-                              title={chapter.title}
-                              onClick={() => setActivePreviewIdx(isActive ? null : chapter.idx)}
-                            >
-                              {chapter.title}
-                            </button>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {selectedCount}/{indices.length}
-                            </span>
-                            <button
-                              type="button"
-                              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-                              onClick={() =>
-                                setCollapsedGroupOverrides((previous) => ({
-                                  ...previous,
-                                  [groupKey]: !isCollapsed,
-                                }))
-                              }
-                            >
-                              {isCollapsed ? (
-                                <ChevronRight className="h-3.5 w-3.5" />
-                              ) : (
-                                <ChevronLeft className="h-3.5 w-3.5 rotate-90" />
-                              )}
-                            </button>
-                          </div>
-
-                          {!isCollapsed && chapter.children.length > 0 && (
-                            <div className="mt-0.5 space-y-0.5">{renderNodes(chapter.children, 1)}</div>
-                          )}
-
-                          {!isCollapsed && chapter.children.length === 0 && (
-                            <div className="ml-7 py-1 text-xs text-muted-foreground">无子章节</div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="w-[45%] overflow-y-auto py-2 pl-3">
-                    {activeSection ? (
-                      <div>
-                        <div className="mb-3 flex items-start gap-2">
-                          <div>
-                            <h4 className="text-sm font-semibold leading-tight">
-                              {activeSection.title ?? `Section ${activePreviewIdx !== null ? activePreviewIdx + 1 : 1}`}
-                            </h4>
-                            {activeSection.page_start != null && (
-                              <span className="text-xs text-muted-foreground">
-                                第 {activeSection.page_start + 1} 页
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/80">
-                          {getSectionPreview(activeSection).slice(0, 2000) || '（无内容预览）'}
-                          {getSectionPreview(activeSection).length > 2000 && (
-                            <span className="italic text-muted-foreground">…（内容较长，已截断）</span>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 py-8 text-center text-muted-foreground">
-                        <Eye className="h-8 w-8 opacity-30" />
-                        <p className="text-xs">
-                          点击左侧章节标题
-                          <br />
-                          在此预览内容
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                  全选
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSelectedSectionIndicesChange([])}
+                >
+                  全不选
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const nextCollapsed: Record<string, boolean> = {};
+                    for (const root of roots) {
+                      nextCollapsed[`sec-${root.idx}`] = false;
+                    }
+                    setCollapsedGroupOverrides(nextCollapsed);
+                  }}
+                >
+                  展开全部
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const nextCollapsed: Record<string, boolean> = {};
+                    for (const root of roots) {
+                      nextCollapsed[`sec-${root.idx}`] = true;
+                    }
+                    setCollapsedGroupOverrides(nextCollapsed);
+                  }}
+                >
+                  折叠全部
+                </Button>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+            </div>
 
-      <Card>
-        <CardContent className="flex flex-col gap-3 p-6 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3 border-b px-1 py-1.5 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <FileText className="h-3 w-3" />
+                章节树
+              </span>
+              <span className="ml-auto font-medium text-foreground">
+                {selectedSectionIndices.length}/{sections.length} 段已选
+              </span>
+              {selectedCharCount > 0 && <span>≈ {(selectedCharCount / 500).toFixed(0)} 段落</span>}
+            </div>
+
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              <div className="w-[55%] space-y-0.5 overflow-y-auto border-r py-2 pr-1">
+                {roots.map((chapter) => {
+                  const indices = collectIndices(chapter);
+                  const selectedCount = indices.reduce(
+                    (count, index) => count + (selectedSet.has(index) ? 1 : 0),
+                    0,
+                  );
+                  const allChecked = selectedCount === indices.length && indices.length > 0;
+                  const partiallyChecked = selectedCount > 0 && selectedCount < indices.length;
+                  const groupKey = `sec-${chapter.idx}`;
+                  const isCollapsed = collapsedGroups[groupKey] ?? true;
+                  const isActive = activePreviewIdx === chapter.idx;
+
+                  return (
+                    <div key={groupKey}>
+                      <div
+                        className={`flex items-center gap-2 rounded px-2 py-2 transition-colors ${
+                          isActive ? 'border border-primary/30 bg-primary/10' : 'hover:bg-muted/50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="shrink-0 accent-primary"
+                          checked={allChecked}
+                          ref={(element) => {
+                            if (element) {
+                              element.indeterminate = partiallyChecked;
+                            }
+                          }}
+                          onChange={(event) => selectMany(indices, event.target.checked)}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                        <button
+                          type="button"
+                          className={`min-w-0 flex-1 truncate text-left text-sm font-semibold ${
+                            isActive ? 'text-primary' : ''
+                          }`}
+                          title={chapter.title}
+                          onClick={() => setActivePreviewIdx(isActive ? null : chapter.idx)}
+                        >
+                          {chapter.title}
+                        </button>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {selectedCount}/{indices.length}
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                          onClick={() =>
+                            setCollapsedGroupOverrides((previous) => ({
+                              ...previous,
+                              [groupKey]: !isCollapsed,
+                            }))
+                          }
+                        >
+                          {isCollapsed ? (
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronLeft className="h-3.5 w-3.5 rotate-90" />
+                          )}
+                        </button>
+                      </div>
+
+                      {!isCollapsed && chapter.children.length > 0 && (
+                        <div className="mt-0.5 space-y-0.5">{renderNodes(chapter.children, 1)}</div>
+                      )}
+
+                      {!isCollapsed && chapter.children.length === 0 && (
+                        <div className="ml-7 py-1 text-xs text-muted-foreground">无子章节</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="w-[45%] overflow-y-auto py-2 pl-3">
+                {activeSection ? (
+                  <div>
+                    <div className="mb-3 flex items-start gap-2">
+                      <div>
+                        <h4 className="text-sm font-semibold leading-tight">
+                          {activeSection.title ?? `Section ${activePreviewIdx !== null ? activePreviewIdx + 1 : 1}`}
+                        </h4>
+                        {activeSection.page_start != null && (
+                          <span className="text-xs text-muted-foreground">
+                            第 {activeSection.page_start + 1} 页
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/80">
+                      {getSectionPreview(activeSection).slice(0, 2000) || '（无内容预览）'}
+                      {getSectionPreview(activeSection).length > 2000 && (
+                        <span className="italic text-muted-foreground">…（内容较长，已截断）</span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-2 py-8 text-center text-muted-foreground">
+                    <Eye className="h-8 w-8 opacity-30" />
+                    <p className="text-xs">
+                      点击左侧章节标题
+                      <br />
+                      在此预览内容
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </StagePanel>
+
+      <StagePanel
+        title="范围摘要"
+        description="把本轮范围收口成可执行摘要，并明确是否已经满足进入草案阶段的条件。"
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border bg-slate-50 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">当前方案</p>
+            <p className="mt-2 text-sm font-semibold text-slate-900">
+              {selectedPreset?.label ?? '整篇论文'}
+            </p>
+          </div>
+          <div className="rounded-2xl border bg-slate-50 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">进入草案阶段</p>
+            <p className="mt-2 text-sm font-semibold text-slate-900">{canConfirm ? '已满足条件' : '仍需补充选择'}</p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-dashed p-4 text-sm text-slate-600">
+          {mode === 'preset'
+            ? selectedPreset?.description ?? '使用整篇论文作为默认参考范围。'
+            : '当前使用自定义范围，建议检查关键章节是否都已纳入参考。'}
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center md:justify-between">
           <div className="space-y-1 text-sm">
             <p className="font-medium">{isConfirmed ? '当前范围已确认' : '确认后将进入草案阶段'}</p>
             <p className="text-muted-foreground">
@@ -539,8 +581,8 @@ export function ScopeStage({
           <Button type="button" onClick={onConfirm} disabled={!canConfirm}>
             {confirmButtonLabel}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </StagePanel>
     </div>
   );
 }

@@ -44,12 +44,48 @@ function createReviewStageProps() {
 }
 
 describe('ReviewStage', () => {
+  it('organizes review into result list, current detail, edit actions and delivery summary', () => {
+    const { container } = render(<ReviewStage {...createReviewStageProps()} />);
+    const reviewGrid = container.querySelector('div.grid.gap-4');
+    const resultListCard = screen.getByRole('heading', { name: '结果清单' }).closest('.rounded-lg');
+
+    expect(reviewGrid).toHaveClass('xl:grid-cols-[minmax(0,1fr)_320px]');
+    expect(reviewGrid).toHaveClass('2xl:grid-cols-[280px_minmax(0,1fr)_320px]');
+    expect(resultListCard).toHaveClass('xl:col-span-2');
+    expect(screen.getByRole('heading', { name: '结果清单' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '当前版本详情' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '精修动作' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '交付摘要' })).toBeInTheDocument();
+  });
+
   it('shows selected asset preview with version timeline and final action', () => {
     render(<ReviewStage {...createReviewStageProps()} />);
 
     expect(screen.getByRole('img', { name: '图 1 预览' })).toBeInTheDocument();
     expect(screen.getByText('结果清单')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '标记为最终稿' })).toBeInTheDocument();
+  });
+
+  it('allows long result titles to wrap inside the result list', () => {
+    render(
+      <ReviewStage
+        {...createReviewStageProps()}
+        assets={[
+          {
+            ...createReviewStageProps().assets[0],
+            title: '这是一个很长的结果标题用于确认结果清单在窄宽度下会自动换行而不是继续把内容挤出容器',
+          },
+        ]}
+      />,
+    );
+
+    const title = screen.getAllByText(
+      '这是一个很长的结果标题用于确认结果清单在窄宽度下会自动换行而不是继续把内容挤出容器',
+    )[0];
+
+    expect(title).toHaveClass('line-clamp-2');
+    expect(title).toHaveClass('break-words');
+    expect(title).not.toHaveClass('truncate');
   });
 
   it('submits edit instruction for the selected version', async () => {

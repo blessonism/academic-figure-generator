@@ -140,6 +140,7 @@ export interface StudioStageNavItem {
   id: StudioStage;
   label: string;
   status: StudioStageStatus;
+  objective?: string;
   reason?: string;
   nextAction?: string;
 }

@@ -10,7 +10,7 @@ import { PromptStage } from '@/components/studio/stages/PromptStage';
 import { RenderStage } from '@/components/studio/stages/RenderStage';
 import { ReviewStage } from '@/components/studio/stages/ReviewStage';
 import { ScopeStage } from '@/components/studio/stages/ScopeStage';
-import { STUDIO_STAGE_LABELS, STUDIO_STAGE_ORDER } from '@/studio/constants';
+import { STUDIO_STAGE_LABELS, STUDIO_STAGE_OBJECTIVES, STUDIO_STAGE_ORDER } from '@/studio/constants';
 import type { StudioStageNavItem } from '@/studio/types';
 import { useProjectStudio } from '@/studio/useProjectStudio';
 
@@ -87,6 +87,7 @@ export function ProjectStudioPage() {
       return {
         id: stage,
         label: STUDIO_STAGE_LABELS[stage],
+        objective: STUDIO_STAGE_OBJECTIVES[stage],
         status: 'blocked',
         reason: '缺少已解析文档',
         nextAction: '请先上传并解析论文',
@@ -97,6 +98,7 @@ export function ProjectStudioPage() {
       return {
         id: stage,
         label: STUDIO_STAGE_LABELS[stage],
+        objective: STUDIO_STAGE_OBJECTIVES[stage],
         status: index === currentStageIndex ? 'current' : 'blocked',
         reason: '尚未确认范围',
         nextAction: '请先确认本次参考范围',
@@ -107,6 +109,7 @@ export function ProjectStudioPage() {
       return {
         id: stage,
         label: STUDIO_STAGE_LABELS[stage],
+        objective: STUDIO_STAGE_OBJECTIVES[stage],
         status: index === currentStageIndex ? 'current' : 'blocked',
         reason: '尚未接受草案',
         nextAction: '请先在草案阶段接受至少一条草案',
@@ -117,6 +120,7 @@ export function ProjectStudioPage() {
       return {
         id: stage,
         label: STUDIO_STAGE_LABELS[stage],
+        objective: STUDIO_STAGE_OBJECTIVES[stage],
         status: index === currentStageIndex ? 'current' : 'blocked',
         reason: '尚未生成可交付图片',
         nextAction: '请先在生成配图阶段完成至少一张图片',
@@ -126,6 +130,7 @@ export function ProjectStudioPage() {
     return {
       id: stage,
       label: STUDIO_STAGE_LABELS[stage],
+      objective: STUDIO_STAGE_OBJECTIVES[stage],
       status: index < currentStageIndex ? 'complete' : index === currentStageIndex ? 'current' : 'idle',
     };
   });
@@ -233,17 +238,17 @@ export function ProjectStudioPage() {
       main={mainContent}
       inspector={
         <StudioInspector
-          title="检查器"
+          title="专业摘要面板"
           description={
             currentStage === 'scope'
-              ? '当前展示范围确认摘要，后续会继续补充草案来源与推荐信息。'
+              ? '围绕范围确认展示推荐依据、已选章节和下一步动作。'
               : currentStage === 'prompt'
-                ? '当前先确认 Prompt 草案，右侧摘要展示待确认与已接受数量。'
+                ? '围绕草案评审展示保留数量、评审风险和下一步建议。'
                 : currentStage === 'render'
-                  ? '当前聚焦默认参数、渲染队列与结果状态，右侧摘要展示出图进度。'
+                  ? '围绕提交前决策展示参数、预算和队列进度。'
                   : currentStage === 'review'
-                    ? '当前聚焦版本历史、改单入口与最终稿标记，右侧摘要展示交付准备情况。'
-                    : '当前先聚焦 IngestStage，右侧展示项目与文档就绪状态。'
+                    ? '围绕交付阶段展示版本状态、最终稿标记和下载准备情况。'
+                    : '围绕输入准备展示文档、解析状态与进入下一阶段的就绪程度。'
           }
         >
           <div className="space-y-2 text-sm">

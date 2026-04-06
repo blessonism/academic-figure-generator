@@ -5,6 +5,34 @@ import { render, screen } from '@/test/render';
 import { ScopeStage } from '@/components/studio/stages/ScopeStage';
 
 describe('ScopeStage', () => {
+  it('organizes scope decisions into source, recommendation, manual tuning and summary panels', () => {
+    render(
+      <ScopeStage
+        mode="preset"
+        selectedPresetId="full-paper"
+        documentName="paper.pdf"
+        sections={[
+          {
+            title: '1 Introduction',
+            content: 'Intro content',
+          },
+        ]}
+        selectedSectionIndices={[0]}
+        canConfirm={true}
+        isConfirmed={false}
+        onModeChange={() => {}}
+        onPresetSelect={() => {}}
+        onSelectedSectionIndicesChange={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: '输入来源确认' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '推荐范围' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '手动微调' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '范围摘要' })).toBeInTheDocument();
+  });
+
   it('shows scope preset cards before advanced tree picker', () => {
     render(
       <ScopeStage
