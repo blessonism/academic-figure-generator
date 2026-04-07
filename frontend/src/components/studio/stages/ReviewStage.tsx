@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Download,
@@ -94,6 +94,7 @@ export function ReviewStage({
   const [manualSelectedAssetId, setManualSelectedAssetId] = useState<string | null>(null);
   const [manualSelectedVersionIds, setManualSelectedVersionIds] = useState<Record<string, string>>({});
   const [editInputs, setEditInputs] = useState<Record<string, string>>({});
+  const autoPreviewRequestedRef = useRef<Set<string>>(new Set());
 
   const selectedAsset = useMemo(
     () => assets.find((asset) => asset.id === manualSelectedAssetId) ?? assets[0] ?? null,
@@ -118,6 +119,29 @@ export function ReviewStage({
       selectedVersion &&
       latestVersion.imageId !== selectedVersion.imageId,
   );
+
+  useEffect(() => {
+    if (selectedVersion.status !== 'completed') {
+      return;
+    }
+
+    if (selectedVersion.previewUrl || selectedVersion.isPreviewLoading) {
+      return;
+    }
+
+    if (autoPreviewRequestedRef.current.has(selectedVersion.imageId)) {
+      return;
+    }
+
+    autoPreviewRequestedRef.current.add(selectedVersion.imageId);
+    onPreviewAsset(selectedVersion.imageId);
+  }, [
+    onPreviewAsset,
+    selectedVersion.imageId,
+    selectedVersion.isPreviewLoading,
+    selectedVersion.previewUrl,
+    selectedVersion.status,
+  ]);
 
   const handleSubmitEdit = async () => {
     if (!selectedAsset || !selectedVersion) {
@@ -251,21 +275,17 @@ export function ReviewStage({
                       </div>
                     ) : selectedVersion.status === 'completed' ? (
                       <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
-                        <ImageIcon className="h-8 w-8" />
-                        <Button
-                          variant="secondary"
-                          onClick={() => onPreviewAsset(selectedVersion.imageId)}
-                          disabled={selectedVersion.isPreviewLoading}
-                        >
-                          {selectedVersion.isPreviewLoading ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              加载预览中
-                            </>
-                          ) : (
-                            '加载预览'
-                          )}
-                        </Button>
+                        {selectedVersion.isPreviewLoading ? (
+                          <>
+                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                            <p>正在自动加载当前版本预览...</p>
+                          </>
+                        ) : (
+                          <>
+                            <ImageIcon className="h-8 w-8" />
+                            <p>正在准备当前版本预览...</p>
+                          </>
+                        )}
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">

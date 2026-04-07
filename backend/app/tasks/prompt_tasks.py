@@ -242,6 +242,23 @@ def _parse_figure_prompts(raw_text: str) -> list[dict[str, Any]]:
     return figures
 
 
+def _extract_source_sections(fig: dict[str, Any]) -> list[str]:
+    """提取并归一化 Prompt AI 返回的来源章节标题。"""
+    candidates = fig.get("source_section_titles")
+    if not isinstance(candidates, list):
+        return []
+
+    normalized_titles: list[str] = []
+    for item in candidates:
+        if not isinstance(item, str):
+            continue
+        title = item.strip()
+        if title:
+            normalized_titles.append(title)
+
+    return normalized_titles
+
+
 def _get_system_prompt_ai_settings(
     db: Session,
 ) -> tuple[str | None, str | None, str | None, str | None]:
@@ -700,12 +717,15 @@ def generate_prompts_task(
             active_system_prompt = ACADEMIC_FIGURE_SYSTEM_PROMPT
 
         logger.info(
-            "Calling Prompt AI | provider=%s url=%s model=%s max_tokens=%d template_mode=%s",
+            "Calling Prompt AI | provider=%s url=%s model=%s max_tokens=%d template_mode=%s model_source=%s base_url_source=%s key_source=%s",
             effective_provider,
             effective_api_url,
             effective_model,
             effective_max_tokens,
             template_mode,
+            resolved_settings.sources.model,
+            resolved_settings.sources.api_base_url,
+            resolved_settings.key_source,
         )
         prompt_ai_result = prompt_ai_service.generate_completion(
             system_prompt=active_system_prompt,
@@ -776,6 +796,7 @@ def generate_prompts_task(
                         original_prompt,
                         suggested_figure_type,
                         suggested_aspect_ratio,
+                        source_sections,
                         generation_status,
                         generator_provider,
                         generator_model,
@@ -786,6 +807,7 @@ def generate_prompts_task(
                         :original_prompt,
                         :suggested_figure_type,
                         :suggested_aspect_ratio,
+                        :source_sections,
                         'completed',
                         :generator_provider,
                         :generator_model,
@@ -801,8 +823,12 @@ def generate_prompts_task(
                     "figure_number": fig.get("figure_number", i + 1),
                     "title": fig.get("title", f"Figure {i + 1}"),
                     "original_prompt": fig.get("prompt", ""),
-                    "suggested_figure_type": fig.get("figure_type", "overall_framework"),
+                    "suggested_figure_type": fig.get(
+                        "suggested_figure_type",
+                        fig.get("figure_type", "overall_framework"),
+                    ),
                     "suggested_aspect_ratio": fig.get("suggested_aspect_ratio", "16:9"),
+                    "source_sections": _extract_source_sections(fig),
                     "generator_provider": effective_provider,
                     "generator_model": effective_model,
                     "now": now,

@@ -11,6 +11,7 @@ from .base import Base, TimestampMixin
 if TYPE_CHECKING:
     from .document import Document
     from .image import Image
+    from .market import MarketItem, MarketItemFavorite, MarketItemLike, ProjectReferenceAsset
     from .project import Project
     from .prompt import Prompt
     from .usage import UsageLog
@@ -162,6 +163,26 @@ class User(Base, TimestampMixin):
     )
     images: Mapped[list["Image"]] = relationship(
         "Image", back_populates="user", cascade="all, delete-orphan"
+    )
+    created_market_items: Mapped[list["MarketItem"]] = relationship(
+        "MarketItem",
+        foreign_keys="MarketItem.created_by",
+        back_populates="creator",
+        cascade="all, delete-orphan",
+    )
+    updated_market_items: Mapped[list["MarketItem"]] = relationship(
+        "MarketItem",
+        foreign_keys="MarketItem.updated_by",
+        back_populates="updater",
+    )
+    market_item_likes: Mapped[list["MarketItemLike"]] = relationship(
+        "MarketItemLike", back_populates="user", cascade="all, delete-orphan"
+    )
+    market_item_favorites: Mapped[list["MarketItemFavorite"]] = relationship(
+        "MarketItemFavorite", back_populates="user", cascade="all, delete-orphan"
+    )
+    project_reference_assets: Mapped[list["ProjectReferenceAsset"]] = relationship(
+        "ProjectReferenceAsset", back_populates="user", cascade="all, delete-orphan"
     )
     usage_logs: Mapped[list["UsageLog"]] = relationship(
         "UsageLog", back_populates="user", cascade="all, delete-orphan"

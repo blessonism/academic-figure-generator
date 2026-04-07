@@ -60,6 +60,18 @@ class SystemSettings(Base, TimestampMixin):
         comment="NanoBanana model id (e.g. gemini-3-pro-image-preview)",
     )
 
+    # PaddleOCR API
+    paddleocr_server_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="System PaddleOCR API base URL",
+    )
+    paddleocr_api_key_enc: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="AES-256 encrypted system PaddleOCR access token",
+    )
+
     # Billing / Pricing
     image_price_cny: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),

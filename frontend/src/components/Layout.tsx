@@ -8,7 +8,7 @@ import {
     Activity,
     Settings,
     Zap,
-    Shield,
+    Store,
     Users,
     Menu,
     X,
@@ -178,12 +178,13 @@ export function Layout() {
 
     const navItems = [
         { name: 'Studio 项目', path: '/projects', icon: LayoutDashboard },
+        { name: '配图市场', path: '/market', icon: Store },
         { name: '配色管理', path: '/color-schemes', icon: Palette },
         { name: '用量看板', path: '/usage', icon: Activity },
         { name: '设置', path: '/settings', icon: Settings },
         { name: 'Quick Lab', path: '/generate', icon: Zap },
         ...(user?.is_admin ? [
-            { name: '系统管理', path: '/admin/settings', icon: Shield },
+            { name: '市场管理', path: '/admin/market', icon: Store },
             { name: '用户管理', path: '/admin/users', icon: Users },
         ] : []),
     ];

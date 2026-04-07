@@ -1,7 +1,7 @@
 """Celery task: run PaddleOCR on an uploaded PDF document.
 
 Flow:
-  1. Load document record and user's PaddleOCR credentials from DB.
+  1. Load document record and system PaddleOCR credentials from DB.
   2. Download raw file bytes from MinIO.
   3. Call OCRService.process() → markdown, sections, page_count.
   4. Update Document row (full_text, sections, page_count, ocr_markdown, parse_status).
@@ -44,7 +44,7 @@ def run_paddleocr_task(self: Task, document_id: str, user_id: str) -> dict[str, 
 
     Args:
         document_id: UUID of the Document to process.
-        user_id:     UUID of the owning User (to fetch their OCR credentials).
+        user_id:     UUID of the owning User.
 
     Returns:
         dict with keys: document_id, page_count, section_count.
@@ -71,7 +71,7 @@ def run_paddleocr_task(self: Task, document_id: str, user_id: str) -> dict[str, 
         db.commit()
 
         # ------------------------------------------------------------------
-        # 2. Load document record + user OCR credentials
+        # 2. Load document record + system OCR credentials
         # ------------------------------------------------------------------
         doc_row = db.execute(
             text("SELECT storage_path, file_type FROM documents WHERE id = :doc_id"),
@@ -83,21 +83,20 @@ def run_paddleocr_task(self: Task, document_id: str, user_id: str) -> dict[str, 
 
         storage_path = doc_row[0]
 
-        user_row = db.execute(
+        settings_row = db.execute(
             text(
-                "SELECT paddleocr_server_url, paddleocr_token_enc "
-                "FROM users WHERE id = :uid"
-            ),
-            {"uid": user_id},
+                "SELECT paddleocr_server_url, paddleocr_api_key_enc "
+                "FROM system_settings WHERE id = 1"
+            )
         ).fetchone()
 
-        if not user_row or not user_row[0] or not user_row[1]:
+        if not settings_row or not settings_row[0] or not settings_row[1]:
             raise ValueError(
-                f"User {user_id} has no PaddleOCR credentials configured."
+                "System PaddleOCR credentials are not configured."
             )
 
-        server_url: str = user_row[0]
-        token: str = decrypt_api_key(user_row[1])
+        server_url: str = settings_row[0]
+        token: str = decrypt_api_key(settings_row[1])
 
         # ------------------------------------------------------------------
         # 3. Download raw file from MinIO

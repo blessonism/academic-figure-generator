@@ -23,6 +23,10 @@ from app.schemas.admin import (
 )
 from app.schemas.admin_usage import AdminUsageDailyPoint, AdminUsageSummary
 from app.schemas.prompt_ai import PromptAIModelsProbeRequest, PromptAIModelsResponse
+from app.schemas.prompt_ai import (
+    PromptAIEffectiveConfigResponse,
+    PromptAIResolvePreviewRequest,
+)
 from app.schemas.system_settings import SystemSettingsResponse, SystemSettingsUpdate
 from app.services.nanobanana_service import (
     NanoBananaConfigLayer,
@@ -34,7 +38,9 @@ from app.services.prompt_ai_service import (
     PromptAIConfigLayer,
     PromptAIService,
     get_env_prompt_ai_config_layer,
+    resolve_prompt_ai_effective_config,
     resolve_prompt_ai_settings,
+    validate_prompt_ai_model_config,
 )
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -86,15 +92,124 @@ def _settings_to_nanobanana_layer(settings: SystemSettings) -> NanoBananaConfigL
     )
 
 
-def _settings_to_response(s: SystemSettings) -> SystemSettingsResponse:
+def _prompt_ai_effective_config_to_response(
+    effective,
+) -> PromptAIEffectiveConfigResponse:
+    return PromptAIEffectiveConfigResponse(
+        provider=effective.provider,
+        api_base_url=effective.api_base_url,
+        model=effective.model,
+        max_tokens=effective.max_tokens,
+        api_key_available=effective.api_key_available,
+        sources={
+            "provider": effective.sources["provider"]
+            if isinstance(effective.sources, dict)
+            else effective.sources.provider,
+            "api_key": effective.sources["api_key"]
+            if isinstance(effective.sources, dict)
+            else effective.sources.api_key,
+            "api_base_url": effective.sources["api_base_url"]
+            if isinstance(effective.sources, dict)
+            else effective.sources.api_base_url,
+            "model": effective.sources["model"]
+            if isinstance(effective.sources, dict)
+            else effective.sources.model,
+            "max_tokens": effective.sources["max_tokens"]
+            if isinstance(effective.sources, dict)
+            else effective.sources.max_tokens,
+        },
+        validation_status=effective.validation_status,
+        validation_message=effective.validation_message,
+    )
+
+
+async def _resolve_system_prompt_ai_effective_config(
+    *,
+    settings: SystemSettings,
+    draft_layer: PromptAIConfigLayer | None = None,
+) -> object:
+    effective = resolve_prompt_ai_effective_config(
+        user_layer=PromptAIConfigLayer(
+            provider=(
+                draft_layer.provider
+                if draft_layer and draft_layer.provider is not None
+                else settings.prompt_ai_provider
+            ),
+            api_key=(
+                draft_layer.api_key
+                if draft_layer and draft_layer.api_key is not None
+                else (
+                    decrypt_api_key(settings.prompt_ai_api_key_enc)
+                    if settings.prompt_ai_api_key_enc
+                    else None
+                )
+            ),
+            api_base_url=(
+                draft_layer.api_base_url
+                if draft_layer and draft_layer.api_base_url is not None
+                else settings.prompt_ai_api_base_url
+            ),
+            model=(
+                draft_layer.model
+                if draft_layer and draft_layer.model is not None
+                else settings.prompt_ai_model
+            ),
+        ),
+        system_layer=PromptAIConfigLayer(),
+        env_layer=get_env_prompt_ai_config_layer(),
+    )
+
+    if effective.api_key_available and effective.model:
+        try:
+            service = PromptAIService(
+                provider=effective.provider,
+                api_key=(
+                    draft_layer.api_key
+                    if draft_layer and draft_layer.api_key is not None
+                    else (
+                        decrypt_api_key(settings.prompt_ai_api_key_enc)
+                        if settings.prompt_ai_api_key_enc
+                        else None
+                    )
+                ),
+                api_base_url=effective.api_base_url,
+                model=effective.model,
+                max_tokens=effective.max_tokens,
+            )
+            models = await service.list_models()
+            return await validate_prompt_ai_model_config(
+                effective,
+                model_options=models,
+            )
+        except Exception:
+            return await validate_prompt_ai_model_config(
+                effective,
+                model_options=None,
+            )
+
+    return await validate_prompt_ai_model_config(
+        effective,
+        model_options=None,
+    )
+
+
+async def _settings_to_response(s: SystemSettings) -> SystemSettingsResponse:
+    effective_prompt_ai = await _resolve_system_prompt_ai_effective_config(
+        settings=s
+    )
     return SystemSettingsResponse(
         prompt_ai_provider=s.prompt_ai_provider,
         prompt_ai_api_key_set=s.prompt_ai_api_key_enc is not None,
         prompt_ai_api_base_url=s.prompt_ai_api_base_url,
         prompt_ai_model=s.prompt_ai_model,
+        prompt_ai_effective_config=_prompt_ai_effective_config_to_response(
+            effective_prompt_ai
+        ),
         nanobanana_api_key_set=s.nanobanana_api_key_enc is not None,
         nanobanana_api_base_url=s.nanobanana_api_base_url,
         nanobanana_model=s.nanobanana_model,
+        paddleocr_server_url=s.paddleocr_server_url,
+        paddleocr_api_key_set=s.paddleocr_api_key_enc is not None,
         image_price_cny=float(s.image_price_cny),
         image_price_cny_1k=float(s.image_price_cny_1k),
         image_price_cny_2k=float(s.image_price_cny_2k),
@@ -138,7 +253,7 @@ async def get_system_settings(
 ):
     """Get current system-wide API settings (admin only)."""
     settings = await _get_or_create_settings(db)
-    return _settings_to_response(settings)
+    return await _settings_to_response(settings)
 
 
 @router.put("/settings", response_model=SystemSettingsResponse)
@@ -149,6 +264,27 @@ async def update_system_settings(
 ):
     """Update system-wide API settings (admin only)."""
     settings = await _get_or_create_settings(db)
+    draft_updates = data.model_dump(exclude_unset=True)
+    prompt_ai_fields = {
+        "prompt_ai_provider",
+        "prompt_ai_api_key",
+        "prompt_ai_api_base_url",
+        "prompt_ai_model",
+    }
+    if prompt_ai_fields & set(draft_updates):
+        effective = await _resolve_system_prompt_ai_effective_config(
+            settings=settings,
+            draft_layer=PromptAIConfigLayer(
+                provider=draft_updates.get("prompt_ai_provider"),
+                api_key=draft_updates.get("prompt_ai_api_key"),
+                api_base_url=draft_updates.get("prompt_ai_api_base_url"),
+                model=draft_updates.get("prompt_ai_model"),
+            ),
+        )
+        if effective.validation_status == "invalid":
+            raise BadRequestException(
+                effective.validation_message or "当前 Prompt AI 配置无效。"
+            )
     updates = data.model_dump(exclude_unset=True)
 
     # Handle API key encryption separately
@@ -165,6 +301,13 @@ async def update_system_settings(
             settings.nanobanana_api_key_enc = encrypt_api_key(raw_key)
         else:
             settings.nanobanana_api_key_enc = None
+
+    if "paddleocr_api_key" in updates:
+        raw_key = updates.pop("paddleocr_api_key")
+        if raw_key:
+            settings.paddleocr_api_key_enc = encrypt_api_key(raw_key)
+        else:
+            settings.paddleocr_api_key_enc = None
 
     # Handle LinuxDO client secret encryption
     if "linuxdo_client_secret" in updates:
@@ -189,7 +332,29 @@ async def update_system_settings(
     db.add(settings)
     await db.flush()
     await db.refresh(settings)
-    return _settings_to_response(settings)
+    return await _settings_to_response(settings)
+
+
+@router.post(
+    "/settings/prompt-ai/resolve-preview",
+    response_model=PromptAIEffectiveConfigResponse,
+)
+async def resolve_system_prompt_ai_preview(
+    data: PromptAIResolvePreviewRequest,
+    _admin=Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    settings = await _get_or_create_settings(db)
+    effective = await _resolve_system_prompt_ai_effective_config(
+        settings=settings,
+        draft_layer=PromptAIConfigLayer(
+            provider=data.prompt_ai_provider,
+            api_key=data.prompt_ai_api_key,
+            api_base_url=data.prompt_ai_api_base_url,
+            model=data.prompt_ai_model,
+        ),
+    )
+    return _prompt_ai_effective_config_to_response(effective)
 
 
 @router.post("/settings/prompt-ai/models", response_model=PromptAIModelsResponse)

@@ -2,18 +2,24 @@
 
 from uuid import UUID
 
+import mimetypes
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ForbiddenException, NotFoundException
-from app.dependencies import get_current_active_user, get_db
+from app.dependencies import get_current_active_user, get_db, get_storage_service
 from app.models.document import Document
 from app.models.image import Image
+from app.models.market import ProjectReferenceAsset
 from app.models.project import Project
 from app.models.prompt import Prompt
 from app.models.user import User
 from app.schemas.common import MessageResponse
+from app.schemas.market import ProjectReferenceAssetResponse
 from app.schemas.project import (
     ProjectCreate,
     ProjectListResponse,
@@ -79,6 +85,14 @@ async def _enrich_response(project: Project, db: AsyncSession) -> ProjectRespons
         prompt_count=prompt_count,
         image_count=image_count,
     )
+
+
+def _normalize_object_name(storage_path: str, bucket: str) -> str:
+    normalized = storage_path.lstrip("/")
+    prefix = f"{bucket}/"
+    if normalized.startswith(prefix):
+        return normalized[len(prefix):]
+    return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -190,3 +204,61 @@ async def delete_project(
     db.add(project)
     await db.flush()
     return MessageResponse(message="Project deleted")
+
+
+@router.get("/{project_id}/reference-assets", response_model=list[ProjectReferenceAssetResponse])
+async def list_project_reference_assets(
+    project_id: UUID,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _get_owned_project(project_id, user, db)
+    result = await db.execute(
+        select(ProjectReferenceAsset)
+        .where(ProjectReferenceAsset.project_id == project_id)
+        .order_by(ProjectReferenceAsset.created_at.desc())
+    )
+    assets = result.scalars().all()
+    return [
+        ProjectReferenceAssetResponse(
+            id=asset.id,
+            project_id=asset.project_id,
+            market_item_id=asset.market_item_id,
+            title=asset.title,
+            source_type=asset.source_type,
+            storage_path=asset.storage_path,
+            download_url=f"/api/v1/projects/{project_id}/reference-assets/{asset.id}/download",
+            created_at=asset.created_at,
+        )
+        for asset in assets
+    ]
+
+
+@router.get("/{project_id}/reference-assets/{asset_id}/download")
+async def download_project_reference_asset(
+    project_id: UUID,
+    asset_id: UUID,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+    storage=Depends(get_storage_service),
+):
+    await _get_owned_project(project_id, user, db)
+    asset = (
+        await db.execute(
+            select(ProjectReferenceAsset).where(
+                ProjectReferenceAsset.id == asset_id,
+                ProjectReferenceAsset.project_id == project_id,
+                ProjectReferenceAsset.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if asset is None:
+        raise NotFoundException("参考素材不存在")
+
+    object_name = _normalize_object_name(asset.storage_path, storage.bucket)
+    file_bytes = storage.download_file(object_name)
+    guessed_type, _ = mimetypes.guess_type(object_name)
+    filename = object_name.split("/")[-1] or f"{asset_id}"
+    quoted = quote(filename)
+    headers = {"Content-Disposition": f"inline; filename*=UTF-8''{quoted}"}
+    return StreamingResponse(iter([file_bytes]), media_type=guessed_type or "application/octet-stream", headers=headers)

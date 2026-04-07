@@ -79,6 +79,10 @@ def get_storage_service():  # noqa: ANN201
 # ---------------------------------------------------------------------------
 
 _oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/login")
+_optional_oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_PREFIX}/auth/login",
+    auto_error=False,
+)
 
 
 async def get_current_user(
@@ -104,6 +108,33 @@ async def get_current_user(
     user: User | None = result.scalar_one_or_none()
     if user is None:
         raise UnauthorizedException("User not found")
+    return user
+
+
+async def get_optional_current_user(
+    token: str | None = Depends(_optional_oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+):
+    """可选地解析当前用户，未登录时返回 None。"""
+    if not token:
+        return None
+
+    try:
+        payload = verify_token(token)
+    except JWTError:
+        return None
+
+    user_id: str | None = payload.get("sub")
+    if user_id is None:
+        return None
+
+    from sqlalchemy import select  # noqa: PLC0415
+    from app.models.user import User  # noqa: PLC0415
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user: User | None = result.scalar_one_or_none()
+    if user is None or not user.is_active:
+        return None
     return user
 
 

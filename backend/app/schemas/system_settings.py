@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas.prompt_ai import PromptAIEffectiveConfigResponse
+
 
 class SystemSettingsResponse(BaseModel):
     """Response: global system settings (keys masked)."""
@@ -12,9 +14,12 @@ class SystemSettingsResponse(BaseModel):
     prompt_ai_api_key_set: bool = False
     prompt_ai_api_base_url: str | None = None
     prompt_ai_model: str | None = None
+    prompt_ai_effective_config: PromptAIEffectiveConfigResponse | None = None
     nanobanana_api_key_set: bool = False
     nanobanana_api_base_url: str | None = None
     nanobanana_model: str | None = None
+    paddleocr_server_url: str | None = None
+    paddleocr_api_key_set: bool = False
     image_price_cny: float | None = None
     image_price_cny_1k: float | None = None
     image_price_cny_2k: float | None = None
@@ -35,6 +40,8 @@ class SystemSettingsResponse(BaseModel):
 class SystemSettingsUpdate(BaseModel):
     """Request body for updating system settings."""
 
+    model_config = {"extra": "forbid"}
+
     prompt_ai_provider: Literal["anthropic", "openai-compatible"] | None = None
     prompt_ai_api_key: str | None = None
     prompt_ai_api_base_url: str | None = None
@@ -42,6 +49,8 @@ class SystemSettingsUpdate(BaseModel):
     nanobanana_api_key: str | None = None
     nanobanana_api_base_url: str | None = None
     nanobanana_model: str | None = None
+    paddleocr_server_url: str | None = None
+    paddleocr_api_key: str | None = None
     image_price_cny: float | None = None
     image_price_cny_1k: float | None = None
     image_price_cny_2k: float | None = None

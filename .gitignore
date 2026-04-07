@@ -26,3 +26,4 @@
 
 # Agent runtime artifacts
 .superpowers/
+.ace-tool/

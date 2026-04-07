@@ -7,7 +7,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -20,14 +20,18 @@ logger = logging.getLogger(__name__)
 SUPPORTED_PROMPT_AI_PROVIDERS = {"anthropic", "openai-compatible"}
 DEFAULT_PROMPT_AI_PROVIDER = "anthropic"
 DEFAULT_PROMPT_AI_MAX_TOKENS = 8192
-DEFAULT_PROMPT_AI_MODELS = {
-    "anthropic": "claude-sonnet-4-20250514",
-    "openai-compatible": "gpt-4.1-mini",
-}
 DEFAULT_PROMPT_AI_BASE_URLS = {
     "anthropic": "https://api.anthropic.com",
     "openai-compatible": "https://api.openai.com",
 }
+PromptAIConfigSource = Literal[
+    "user",
+    "system",
+    "env",
+    "provider_default",
+    "service_default",
+    "missing",
+]
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,32 @@ class ResolvedPromptAISettings:
     model: str
     max_tokens: int
     key_source: str
+    sources: "PromptAIResolvedSources"
+
+
+@dataclass(frozen=True)
+class PromptAIResolvedSources:
+    """记录 Prompt AI 各字段的实际来源。"""
+
+    provider: PromptAIConfigSource
+    api_key: PromptAIConfigSource
+    api_base_url: PromptAIConfigSource
+    model: PromptAIConfigSource
+    max_tokens: PromptAIConfigSource
+
+
+@dataclass(frozen=True)
+class PromptAIEffectiveConfig:
+    """面向接口与前端展示的 Prompt AI 生效配置。"""
+
+    provider: str
+    api_base_url: str
+    model: str
+    max_tokens: int
+    api_key_available: bool
+    sources: PromptAIResolvedSources | dict[str, PromptAIConfigSource]
+    validation_status: Literal["valid", "unknown", "invalid"]
+    validation_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +122,39 @@ def _first_positive_int(*values: int | None) -> int | None:
         if value > 0:
             return value
     return None
+
+
+def _resolve_source(
+    user_value: str | None,
+    system_value: str | None,
+    env_value: str | None,
+    *,
+    allow_default: bool = False,
+    default_source: PromptAIConfigSource = "service_default",
+) -> PromptAIConfigSource:
+    if _first_non_blank(user_value) is not None:
+        return "user"
+    if _first_non_blank(system_value) is not None:
+        return "system"
+    if _first_non_blank(env_value) is not None:
+        return "env"
+    if allow_default:
+        return default_source
+    return "missing"
+
+
+def _resolve_positive_int_source(
+    user_value: int | None,
+    system_value: int | None,
+    env_value: int | None,
+) -> PromptAIConfigSource:
+    if _first_positive_int(user_value) == user_value and user_value is not None and user_value > 0:
+        return "user"
+    if _first_positive_int(system_value) == system_value and system_value is not None and system_value > 0:
+        return "system"
+    if _first_positive_int(env_value) == env_value and env_value is not None and env_value > 0:
+        return "env"
+    return "service_default"
 
 
 def normalize_prompt_ai_provider(value: str | None) -> str:
@@ -348,24 +411,41 @@ def resolve_prompt_ai_settings(
     provider = normalize_prompt_ai_provider(
         _first_non_blank(user.provider, system.provider, env.provider)
     )
+    provider_source = _resolve_source(
+        user.provider,
+        system.provider,
+        env.provider,
+        allow_default=True,
+        default_source="service_default",
+    )
     api_key = _first_non_blank(user.api_key, system.api_key, env.api_key) or ""
+    api_key_source = _resolve_source(user.api_key, system.api_key, env.api_key)
     api_base_url = _first_non_blank(
         user.api_base_url,
         system.api_base_url,
         env.api_base_url,
     ) or DEFAULT_PROMPT_AI_BASE_URLS[provider]
-    model = _first_non_blank(user.model, system.model, env.model) or DEFAULT_PROMPT_AI_MODELS[
-        provider
-    ]
+    api_base_url_source = _resolve_source(
+        user.api_base_url,
+        system.api_base_url,
+        env.api_base_url,
+        allow_default=True,
+        default_source="provider_default",
+    )
+    model = _first_non_blank(user.model, system.model, env.model) or ""
+    model_source = _resolve_source(user.model, system.model, env.model)
     max_tokens = _first_positive_int(user.max_tokens, system.max_tokens, env.max_tokens)
     if max_tokens is None:
         max_tokens = DEFAULT_PROMPT_AI_MAX_TOKENS
+    max_tokens_source = _resolve_positive_int_source(
+        user.max_tokens,
+        system.max_tokens,
+        env.max_tokens,
+    )
 
-    if _first_non_blank(user.api_key):
+    if api_key_source == "user":
         key_source = "byok"
-    elif _first_non_blank(system.api_key):
-        key_source = "platform"
-    elif _first_non_blank(env.api_key):
+    elif api_key_source in {"system", "env"}:
         key_source = "platform"
     else:
         key_source = "platform"
@@ -377,6 +457,108 @@ def resolve_prompt_ai_settings(
         model=model,
         max_tokens=max_tokens,
         key_source=key_source,
+        sources=PromptAIResolvedSources(
+            provider=provider_source,
+            api_key=api_key_source,
+            api_base_url=api_base_url_source,
+            model=model_source,
+            max_tokens=max_tokens_source,
+        ),
+    )
+
+
+def resolve_prompt_ai_effective_config(
+    *,
+    user_layer: PromptAIConfigLayer | None = None,
+    system_layer: PromptAIConfigLayer | None = None,
+    env_layer: PromptAIConfigLayer | None = None,
+) -> PromptAIEffectiveConfig:
+    """生成可供前端展示和保存校验使用的 Prompt AI 生效配置。"""
+    resolved = resolve_prompt_ai_settings(
+        user_layer=user_layer,
+        system_layer=system_layer,
+        env_layer=env_layer,
+    )
+
+    validation_status: Literal["valid", "unknown", "invalid"] = "unknown"
+    validation_message: str | None = None
+
+    if not resolved.model:
+        validation_status = "invalid"
+        validation_message = "当前生效配置缺少模型，请在用户、系统或环境配置中显式提供模型。"
+    elif not resolved.api_key:
+        validation_status = "unknown"
+        validation_message = "当前配置缺少可用 API Key，模型尚未验证。"
+
+    return PromptAIEffectiveConfig(
+        provider=resolved.provider,
+        api_base_url=resolved.api_base_url,
+        model=resolved.model,
+        max_tokens=resolved.max_tokens,
+        api_key_available=bool(resolved.api_key),
+        sources=resolved.sources,
+        validation_status=validation_status,
+        validation_message=validation_message,
+    )
+
+
+async def validate_prompt_ai_model_config(
+    effective: PromptAIEffectiveConfig,
+    *,
+    model_options: list[PromptAIModelOption | dict[str, str]] | None,
+) -> PromptAIEffectiveConfig:
+    """基于可用模型列表校验当前模型是否可用。"""
+    if effective.validation_status == "invalid":
+        return effective
+
+    if not effective.model:
+        return PromptAIEffectiveConfig(
+            **{
+                **effective.__dict__,
+                "validation_status": "invalid",
+                "validation_message": "当前生效配置缺少模型，请先补全模型。",
+            }
+        )
+
+    if not effective.api_key_available:
+        return PromptAIEffectiveConfig(
+            **{
+                **effective.__dict__,
+                "validation_status": "unknown",
+                "validation_message": "配置已解析，但由于缺少可用 API Key，尚未验证模型可用性。",
+            }
+        )
+
+    if model_options is None:
+        return PromptAIEffectiveConfig(
+            **{
+                **effective.__dict__,
+                "validation_status": "unknown",
+                "validation_message": "配置已解析，但尚未验证模型可用性。",
+            }
+        )
+
+    available_ids = {
+        option.id if isinstance(option, PromptAIModelOption) else str(option.get("id") or "").strip()
+        for option in model_options
+    }
+    available_ids.discard("")
+
+    if effective.model not in available_ids:
+        return PromptAIEffectiveConfig(
+            **{
+                **effective.__dict__,
+                "validation_status": "invalid",
+                "validation_message": f"当前模型 {effective.model} 不在已探测到的可用模型列表中。",
+            }
+        )
+
+    return PromptAIEffectiveConfig(
+        **{
+            **effective.__dict__,
+            "validation_status": "valid",
+            "validation_message": None,
+        }
     )
 
 
@@ -601,6 +783,11 @@ class PromptAIService:
         }
 
     def _build_payload(self, *, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+        if not self.config.model:
+            raise ExternalAPIException(
+                "PromptAI",
+                "No Prompt AI model configured. Configure user, system, or env model explicitly.",
+            )
         if self.config.provider == "anthropic":
             return {
                 "model": self.config.model,

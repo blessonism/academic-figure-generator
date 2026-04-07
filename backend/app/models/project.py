@@ -9,6 +9,7 @@ from .base import Base, TimestampMixin
 if TYPE_CHECKING:
     from .document import Document
     from .image import Image
+    from .market import ProjectReferenceAsset
     from .prompt import Prompt
     from .user import User
 
@@ -69,4 +70,7 @@ class Project(Base, TimestampMixin):
     )
     images: Mapped[list["Image"]] = relationship(
         "Image", back_populates="project", cascade="all, delete-orphan"
+    )
+    reference_assets: Mapped[list["ProjectReferenceAsset"]] = relationship(
+        "ProjectReferenceAsset", back_populates="project", cascade="all, delete-orphan"
     )

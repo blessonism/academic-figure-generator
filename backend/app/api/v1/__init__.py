@@ -6,6 +6,7 @@ from app.api.v1.documents import router as documents_router
 from app.api.v1.images import router as images_router
 from app.api.v1.projects import router as projects_router
 from app.api.v1.prompts import router as prompts_router
+from app.api.v1.tasks import router as tasks_router
 from app.api.v1.usage import router as usage_router
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "images_router",
     "projects_router",
     "prompts_router",
+    "tasks_router",
     "usage_router",
 ]

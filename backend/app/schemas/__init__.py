@@ -47,9 +47,12 @@ from app.schemas.prompt import (
     PromptUpdate,
 )
 from app.schemas.prompt_ai import (
+    PromptAIEffectiveConfigResponse,
+    PromptAIEffectiveSourcesResponse,
     PromptAIModelOptionResponse,
     PromptAIModelsProbeRequest,
     PromptAIModelsResponse,
+    PromptAIResolvePreviewRequest,
 )
 from app.schemas.usage import (
     UsageBreakdown,
@@ -82,6 +85,9 @@ __all__ = [
     "PromptAIModelsProbeRequest",
     "PromptAIModelOptionResponse",
     "PromptAIModelsResponse",
+    "PromptAIEffectiveSourcesResponse",
+    "PromptAIEffectiveConfigResponse",
+    "PromptAIResolvePreviewRequest",
     # image
     "ImageGenerateRequest",
     "ImageDirectGenerateRequest",

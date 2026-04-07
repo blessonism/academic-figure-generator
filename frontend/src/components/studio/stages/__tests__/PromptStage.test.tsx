@@ -1,4 +1,4 @@
-import { render, screen } from '@/test/render';
+import { render, screen, userEvent } from '@/test/render';
 
 import { PromptStage } from '@/components/studio/stages/PromptStage';
 
@@ -23,12 +23,17 @@ describe('PromptStage', () => {
           },
         ]}
         promptMode="overall"
+        overallPromptFigureType="overall_framework"
+        sectionPromptFigureTypes={[]}
         promptRequest=""
         templateMode={false}
         isGeneratingDrafts={false}
         savingDraftIds={{}}
         statusMessage={null}
         onPromptModeChange={() => {}}
+        onOverallPromptFigureTypeChange={() => {}}
+        onSectionPromptFigureTypeToggle={() => {}}
+        onSectionPromptFigureTypesReset={() => {}}
         onPromptRequestChange={() => {}}
         onTemplateModeChange={() => {}}
         onGenerateDrafts={() => {}}
@@ -60,12 +65,17 @@ describe('PromptStage', () => {
           },
         ]}
         promptMode="overall"
+        overallPromptFigureType="overall_framework"
+        sectionPromptFigureTypes={[]}
         promptRequest=""
         templateMode={false}
         isGeneratingDrafts={false}
         savingDraftIds={{}}
         statusMessage={null}
         onPromptModeChange={() => {}}
+        onOverallPromptFigureTypeChange={() => {}}
+        onSectionPromptFigureTypeToggle={() => {}}
+        onSectionPromptFigureTypesReset={() => {}}
         onPromptRequestChange={() => {}}
         onTemplateModeChange={() => {}}
         onGenerateDrafts={() => {}}
@@ -79,5 +89,105 @@ describe('PromptStage', () => {
     expect(screen.getByRole('button', { name: '接受' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '跳过' })).toBeInTheDocument();
     expect(screen.getByText('查看来源范围')).toBeInTheDocument();
+  });
+
+  it('在按章节模式下显示自动推荐与图型多选按钮组', () => {
+    render(
+      <PromptStage
+        confirmedScopeSummary={null}
+        drafts={[]}
+        promptMode="sections"
+        overallPromptFigureType="overall_framework"
+        sectionPromptFigureTypes={[]}
+        promptRequest=""
+        templateMode={false}
+        isGeneratingDrafts={false}
+        savingDraftIds={{}}
+        statusMessage={null}
+        onPromptModeChange={() => {}}
+        onOverallPromptFigureTypeChange={() => {}}
+        onSectionPromptFigureTypeToggle={() => {}}
+        onSectionPromptFigureTypesReset={() => {}}
+        onPromptRequestChange={() => {}}
+        onTemplateModeChange={() => {}}
+        onGenerateDrafts={() => {}}
+        onDraftStatusChange={() => {}}
+        onDraftPromptChange={() => {}}
+        onSaveDraftPrompt={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('图型偏好')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '自动推荐' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '网络架构图' })).toBeInTheDocument();
+  });
+
+  it('在按章节模式下点击图型按钮会触发切换回调，并带上 aria-pressed', async () => {
+    const user = userEvent.setup();
+    const onSectionPromptFigureTypeToggle = vi.fn();
+
+    render(
+      <PromptStage
+        confirmedScopeSummary={null}
+        drafts={[]}
+        promptMode="sections"
+        overallPromptFigureType="overall_framework"
+        sectionPromptFigureTypes={['network_architecture']}
+        promptRequest=""
+        templateMode={false}
+        isGeneratingDrafts={false}
+        savingDraftIds={{}}
+        statusMessage={null}
+        onPromptModeChange={() => {}}
+        onOverallPromptFigureTypeChange={() => {}}
+        onSectionPromptFigureTypeToggle={onSectionPromptFigureTypeToggle}
+        onSectionPromptFigureTypesReset={() => {}}
+        onPromptRequestChange={() => {}}
+        onTemplateModeChange={() => {}}
+        onGenerateDrafts={() => {}}
+        onDraftStatusChange={() => {}}
+        onDraftPromptChange={() => {}}
+        onSaveDraftPrompt={() => {}}
+      />,
+    );
+
+    const selectedButton = screen.getByRole('button', { name: '网络架构图' });
+    expect(selectedButton).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(screen.getByRole('button', { name: '对比 / 消融图' }));
+    expect(onSectionPromptFigureTypeToggle).toHaveBeenCalledWith('comparison_ablation');
+  });
+
+  it('在按章节模式下点击自动推荐会触发重置回调', async () => {
+    const user = userEvent.setup();
+    const onSectionPromptFigureTypesReset = vi.fn();
+
+    render(
+      <PromptStage
+        confirmedScopeSummary={null}
+        drafts={[]}
+        promptMode="sections"
+        overallPromptFigureType="overall_framework"
+        sectionPromptFigureTypes={['network_architecture']}
+        promptRequest=""
+        templateMode={false}
+        isGeneratingDrafts={false}
+        savingDraftIds={{}}
+        statusMessage={null}
+        onPromptModeChange={() => {}}
+        onOverallPromptFigureTypeChange={() => {}}
+        onSectionPromptFigureTypeToggle={() => {}}
+        onSectionPromptFigureTypesReset={onSectionPromptFigureTypesReset}
+        onPromptRequestChange={() => {}}
+        onTemplateModeChange={() => {}}
+        onGenerateDrafts={() => {}}
+        onDraftStatusChange={() => {}}
+        onDraftPromptChange={() => {}}
+        onSaveDraftPrompt={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '自动推荐' }));
+    expect(onSectionPromptFigureTypesReset).toHaveBeenCalledTimes(1);
   });
 });

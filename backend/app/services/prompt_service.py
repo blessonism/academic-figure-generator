@@ -14,6 +14,22 @@ from app.models.prompt import Prompt
 logger = logging.getLogger(__name__)
 
 
+def _normalize_source_sections(fig: dict) -> list[str]:
+    titles = fig.get("source_section_titles")
+    if not isinstance(titles, list):
+        return []
+
+    normalized_titles: list[str] = []
+    for item in titles:
+        if not isinstance(item, str):
+            continue
+        title = item.strip()
+        if title:
+            normalized_titles.append(title)
+
+    return normalized_titles
+
+
 class PromptService:
     """CRUD and status queries for AI-generated figure prompts."""
 
@@ -157,10 +173,7 @@ class PromptService:
                 original_prompt=fig.get("prompt"),
                 suggested_figure_type=fig.get("suggested_figure_type"),
                 suggested_aspect_ratio=fig.get("suggested_aspect_ratio"),
-                source_sections={
-                    "titles": fig.get("source_section_titles", []),
-                    "rationale": fig.get("rationale", ""),
-                },
+                source_sections=_normalize_source_sections(fig),
                 generator_provider=generator_provider,
                 generator_model=generator_model,
                 generation_task_id=task_id,

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from .market import MarketItem
     from .project import Project
     from .prompt import Prompt
     from .user import User
@@ -116,3 +117,4 @@ class Image(Base, TimestampMixin):
     prompt: Mapped[Optional["Prompt"]] = relationship("Prompt", back_populates="images")
     project: Mapped["Project"] = relationship("Project", back_populates="images")
     user: Mapped["User"] = relationship("User", back_populates="images")
+    market_items: Mapped[list["MarketItem"]] = relationship("MarketItem", back_populates="origin_image")

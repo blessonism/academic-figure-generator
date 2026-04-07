@@ -14,6 +14,7 @@ from app.core.exceptions import (
 from app.dependencies import get_current_active_user, get_db, get_storage_service
 from app.models.document import Document
 from app.models.project import Project
+from app.models.system_settings import SystemSettings
 from app.models.user import User
 from app.schemas.document import DocumentResponse
 from app.tasks.celery_app import celery_app
@@ -154,8 +155,8 @@ async def trigger_ocr(
 ):
     """Trigger PaddleOCR re-parsing on an existing PDF document.
 
-    Requires the user to have a PaddleOCR server URL and token configured
-    in their settings.  Only supported for PDF files.  Returns the updated
+    Requires PaddleOCR to be configured in system settings.
+    Only supported for PDF files. Returns the updated
     Document record (with parse_status='parsing').
     """
     await _get_owned_project(project_id, user, db)
@@ -171,9 +172,16 @@ async def trigger_ocr(
     if document.parse_status == "parsing":
         raise BadRequestException("文档正在解析中，请稍后再试")
 
-    if not user.paddleocr_server_url or not user.paddleocr_token_enc:
+    system_ocr = (
+        await db.execute(select(SystemSettings).where(SystemSettings.id == 1))
+    ).scalar_one_or_none()
+    if (
+        system_ocr is None
+        or not system_ocr.paddleocr_server_url
+        or not system_ocr.paddleocr_api_key_enc
+    ):
         raise BadRequestException(
-            "请先在「设置」页面配置 PaddleOCR Server URL 和 Access Token"
+            "请先在「系统管理」页面配置 PaddleOCR Server URL 和 Access Token"
         )
 
     # Reset parse status to pending before dispatching

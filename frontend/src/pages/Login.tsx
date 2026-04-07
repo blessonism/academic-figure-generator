@@ -17,6 +17,17 @@ export function Login() {
     const setAuth = useAuthStore((state) => state.setAuth);
     const navigate = useNavigate();
 
+    const getLoginErrorMessage = (error: unknown) => {
+        if (typeof error === 'object' && error !== null && 'response' in error) {
+            const response = (error as { response?: { data?: { detail?: unknown } } }).response;
+            if (typeof response?.data?.detail === 'string') {
+                return response.data.detail;
+            }
+        }
+
+        return '登录失败，请检查您的邮箱和密码。';
+    };
+
     // Check if LinuxDO OAuth is configured
     useEffect(() => {
         api.get('/auth/linuxdo/status')
@@ -39,8 +50,8 @@ export function Login() {
 
             setAuth(access_token, refresh_token, userResponse.data);
             navigate('/projects');
-        } catch (err: any) {
-            setError(err.response?.data?.detail || '登录失败，请检查您的邮箱和密码。');
+        } catch (error: unknown) {
+            setError(getLoginErrorMessage(error));
         } finally {
             setIsLoading(false);
         }
@@ -276,7 +287,7 @@ export function Login() {
 
                             {!oauthConfigured && (
                                 <p className="mt-6 text-center text-xs text-gray-400">
-                                    管理员首次登录后，请在系统管理中配置 Linux DO OAuth
+                                    管理员首次登录后，请在设置中的系统管理里配置 Linux DO OAuth
                                 </p>
                             )}
                         </>

@@ -5,9 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  getPromptFigureTypeHint,
+  STUDIO_PROMPT_FIGURE_TYPE_OPTIONS,
+} from '@/studio/promptGeneration';
 import type {
   StudioConfirmedScopeSummary,
   StudioPromptDraft,
+  StudioPromptFigureType,
   StudioPromptDraftReviewStatus,
   StudioPromptMode,
   StudioStatusMessage,
@@ -17,12 +22,17 @@ interface PromptStageProps {
   confirmedScopeSummary: StudioConfirmedScopeSummary | null;
   drafts: StudioPromptDraft[];
   promptMode: StudioPromptMode;
+  overallPromptFigureType: StudioPromptFigureType;
+  sectionPromptFigureTypes: StudioPromptFigureType[];
   promptRequest: string;
   templateMode: boolean;
   isGeneratingDrafts: boolean;
   savingDraftIds: Record<string, boolean>;
   statusMessage: StudioStatusMessage | null;
   onPromptModeChange: (mode: StudioPromptMode) => void;
+  onOverallPromptFigureTypeChange: (figureType: StudioPromptFigureType) => void;
+  onSectionPromptFigureTypeToggle: (figureType: StudioPromptFigureType) => void;
+  onSectionPromptFigureTypesReset: () => void;
   onPromptRequestChange: (value: string) => void;
   onTemplateModeChange: (enabled: boolean) => void;
   onGenerateDrafts: () => void;
@@ -99,12 +109,17 @@ export function PromptStage({
   confirmedScopeSummary,
   drafts,
   promptMode,
+  overallPromptFigureType,
+  sectionPromptFigureTypes,
   promptRequest,
   templateMode,
   isGeneratingDrafts,
   savingDraftIds,
   statusMessage,
   onPromptModeChange,
+  onOverallPromptFigureTypeChange,
+  onSectionPromptFigureTypeToggle,
+  onSectionPromptFigureTypesReset,
   onPromptRequestChange,
   onTemplateModeChange,
   onGenerateDrafts,
@@ -113,6 +128,12 @@ export function PromptStage({
   onSaveDraftPrompt,
 }: PromptStageProps) {
   const acceptedDrafts = drafts.filter((draft) => draft.status === 'accepted');
+  const promptFigureTypeHint = getPromptFigureTypeHint({
+    promptMode,
+    overallPromptFigureType,
+    sectionPromptFigureTypes,
+  });
+  const isSectionAutoMode = sectionPromptFigureTypes.length === 0;
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -239,7 +260,7 @@ export function PromptStage({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="overall">整体架构图（1 条）</SelectItem>
+                <SelectItem value="overall">聚焦单图草案（1 条）</SelectItem>
                 <SelectItem value="sections">按章节生成多条草案</SelectItem>
               </SelectContent>
             </Select>
@@ -255,6 +276,62 @@ export function PromptStage({
               disabled={templateMode}
             />
           </div>
+        </div>
+
+        <div className="space-y-3 rounded-lg border p-3">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">
+              {promptMode === 'overall' ? '单图类型' : '图型偏好'}
+            </p>
+            <p className="text-xs leading-5 text-muted-foreground">{promptFigureTypeHint}</p>
+          </div>
+
+          {promptMode === 'overall' ? (
+            <Select
+              value={overallPromptFigureType}
+              onValueChange={(value) => onOverallPromptFigureTypeChange(value as StudioPromptFigureType)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STUDIO_PROMPT_FIGURE_TYPE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={isSectionAutoMode ? 'secondary' : 'outline'}
+                  aria-pressed={isSectionAutoMode}
+                  onClick={onSectionPromptFigureTypesReset}
+                >
+                  自动推荐
+                </Button>
+                {STUDIO_PROMPT_FIGURE_TYPE_OPTIONS.map((option) => {
+                  const isSelected = sectionPromptFigureTypes.includes(option.value);
+                  return (
+                    <Button
+                      key={option.value}
+                      type="button"
+                      size="sm"
+                      variant={isSelected ? 'secondary' : 'outline'}
+                      aria-pressed={isSelected}
+                      onClick={() => onSectionPromptFigureTypeToggle(option.value)}
+                    >
+                      {option.label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         <label className="flex items-start gap-3 rounded-lg border px-3 py-2 text-sm">

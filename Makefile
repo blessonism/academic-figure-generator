@@ -29,7 +29,7 @@ logs: ## Tail logs
 # ===== Database =====
 
 migrate: ## Run database migrations
-	$(COMPOSE_DEV) exec backend alembic upgrade head
+	$(COMPOSE_DEV) run --rm migrate
 
 migrate-create: ## Create a new migration (usage: make migrate-create MSG="add users table")
 	$(COMPOSE_DEV) exec backend alembic revision --autogenerate -m "$(MSG)"

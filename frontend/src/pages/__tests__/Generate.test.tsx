@@ -1,5 +1,6 @@
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, vi } from 'vitest';
-import { fireEvent } from '@testing-library/react';
+import { act, fireEvent } from '@testing-library/react';
 
 import { render, screen } from '@/test/render';
 import { Generate } from '@/pages/Generate';
@@ -64,7 +65,13 @@ describe('Generate', () => {
   });
 
   it('uses quick lab copy and reserve save-to-project action', async () => {
-    render(<Generate />);
+    render(
+      <MemoryRouter initialEntries={['/generate']}>
+        <Routes>
+          <Route path="/generate" element={<Generate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
 
     expect(await screen.findByRole('heading', { name: 'Quick Lab' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '保存到项目（即将支持）' })).toBeInTheDocument();
@@ -101,15 +108,74 @@ describe('Generate', () => {
       return Promise.reject(new Error(`unexpected GET ${url}`));
     });
 
-    render(<Generate />);
+    render(
+      <MemoryRouter initialEntries={['/generate']}>
+        <Routes>
+          <Route path="/generate" element={<Generate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
 
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '生成一张测试图' } });
-    fireEvent.click(screen.getByRole('button', { name: '开始试生成' }));
-    await vi.advanceTimersByTimeAsync(3000);
-    await Promise.resolve();
+    await act(async () => {
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: '生成一张测试图' } });
+      fireEvent.click(screen.getByRole('button', { name: '开始试生成' }));
+      await vi.advanceTimersByTimeAsync(3000);
+      await Promise.resolve();
+    });
 
+    expect(screen.getByText('Academic Figure Generator is thinking...')).toBeInTheDocument();
     expect(
       screen.getByText('上游服务暂时不可用，系统正在自动重试（第 2 次，预计 120 秒后）'),
     ).toBeInTheDocument();
+  });
+
+  it('将失败状态里的英文底层错误翻译为更友好的中文提示', async () => {
+    vi.useFakeTimers();
+    apiPost.mockResolvedValue({
+      data: {
+        id: 'image-456',
+      },
+    });
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/images/pricing') {
+        return Promise.resolve({
+          data: {
+            price_cny_default: 1.5,
+            price_cny_1k: 1.2,
+            price_cny_2k: 1.5,
+            price_cny_4k: 2.5,
+          },
+        });
+      }
+
+      if (url === '/images/image-456/status') {
+        return Promise.resolve({
+          data: {
+            generation_status: 'failed',
+            generation_error:
+              "Server error '504 Gateway Timeout' for url 'https://wzw.pp.ua/v1/chat/completions'",
+          },
+        });
+      }
+
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/generate']}>
+        <Routes>
+          <Route path="/generate" element={<Generate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await act(async () => {
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: '生成一张测试图' } });
+      fireEvent.click(screen.getByRole('button', { name: '开始试生成' }));
+      await vi.advanceTimersByTimeAsync(3000);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('上游服务响应超时，请稍后重试。')).toBeInTheDocument();
   });
 });

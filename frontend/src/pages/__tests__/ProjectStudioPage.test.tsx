@@ -1,6 +1,7 @@
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
+import { waitFor } from '@testing-library/react';
 
 import { render, screen } from '@/test/render';
 import { ProjectStudioPage } from '@/pages/ProjectStudioPage';
@@ -22,6 +23,9 @@ const createStudioState = (overrides: Record<string, unknown> = {}) => ({
   handleSelectedSectionIndicesChange: () => {},
   handleTemplateModeChange: () => {},
   handlePromptModeChange: () => {},
+  handleOverallPromptFigureTypeChange: () => {},
+  handleSectionPromptFigureTypeToggle: () => {},
+  handleSectionPromptFigureTypesReset: () => {},
   handlePromptRequestChange: () => {},
   handleRenderAssetOverrideChange: () => {},
   handleRenderAssetPreview: () => {},
@@ -49,6 +53,8 @@ const createStudioState = (overrides: Record<string, unknown> = {}) => ({
   projectId: '42',
   promptDrafts: [],
   promptMode: 'overall',
+  overallPromptFigureType: 'overall_framework',
+  sectionPromptFigureTypes: [],
   promptRequest: '',
   renderAssets: [],
   reviewAssets: [],
@@ -140,6 +146,266 @@ describe('ProjectStudioPage', () => {
     expect(screen.getByText('已确认范围')).toBeInTheDocument();
   });
 
+  it('在收到失败状态时显示 toast 提醒', async () => {
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'prompt',
+        statusMessage: {
+          status: 'failed',
+          detail: '草案生成失败：与上游服务的安全连接已中断，请稍后重试。',
+        },
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/projects/42?stage=prompt']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const toast = await screen.findByRole('alert');
+    expect(toast).toHaveTextContent('草案生成失败：与上游服务的安全连接已中断，请稍后重试。');
+  });
+
+  it('在手动关闭后再次收到同一条失败状态时会重新显示 toast', async () => {
+    const user = userEvent.setup();
+
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'prompt',
+        statusMessage: {
+          status: 'failed',
+          detail: '草案生成失败：与上游服务的安全连接已中断，请稍后重试。',
+        },
+      }),
+    );
+
+    const view = render(
+      <MemoryRouter initialEntries={['/projects/42?stage=prompt']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '草案生成失败：与上游服务的安全连接已中断，请稍后重试。',
+    );
+
+    await user.click(screen.getByRole('button', { name: '关闭提示' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'prompt',
+        statusMessage: {
+          status: 'failed',
+          detail: '草案生成失败：与上游服务的安全连接已中断，请稍后重试。',
+        },
+      }),
+    );
+
+    view.rerender(
+      <MemoryRouter initialEntries={['/projects/42?stage=prompt']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '草案生成失败：与上游服务的安全连接已中断，请稍后重试。',
+    );
+  });
+
+  it('在手动关闭后遇到无关重渲染时不会把同一条旧失败 toast 再弹出来', async () => {
+    const user = userEvent.setup();
+    const persistentStatusMessage = {
+      status: 'failed' as const,
+      detail: '草案生成失败：与上游服务的安全连接已中断，请稍后重试。',
+    };
+
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'prompt',
+        statusMessage: persistentStatusMessage,
+        uploadProgress: 10,
+      }),
+    );
+
+    const view = render(
+      <MemoryRouter initialEntries={['/projects/42?stage=prompt']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '草案生成失败：与上游服务的安全连接已中断，请稍后重试。',
+    );
+
+    await user.click(screen.getByRole('button', { name: '关闭提示' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'prompt',
+        statusMessage: persistentStatusMessage,
+        uploadProgress: 25,
+      }),
+    );
+
+    view.rerender(
+      <MemoryRouter initialEntries={['/projects/42?stage=prompt']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+  });
+
+  it('在草案生成返回非重试错误详情时显示失败 toast，而不是处理中', async () => {
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'prompt',
+        hasConfirmedScope: true,
+        hasParsedDocument: true,
+        isGeneratingDrafts: true,
+        statusMessage: {
+          status: 'running',
+          detail: '正在生成 Prompt 草案，请稍候。',
+        },
+      }),
+    );
+
+    const view = render(
+      <MemoryRouter initialEntries={['/projects/42?stage=prompt']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'prompt',
+        hasConfirmedScope: true,
+        hasParsedDocument: true,
+        isGeneratingDrafts: true,
+        statusMessage: {
+          status: 'running',
+          detail: 'ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol',
+        },
+      }),
+    );
+
+    view.rerender(
+      <MemoryRouter initialEntries={['/projects/42?stage=prompt']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      const failedToast = screen
+        .getAllByRole('alert')
+        .find((toast) => toast.textContent?.includes('操作失败'));
+
+      expect(failedToast).toBeDefined();
+      expect(failedToast).toHaveTextContent(
+        '草案生成失败：与上游服务的安全连接已中断，请稍后重试。',
+      );
+    });
+  });
+
+  it('在草案初始生成中时显示运行中 toast', async () => {
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'prompt',
+        hasConfirmedScope: true,
+        hasParsedDocument: true,
+        isGeneratingDrafts: true,
+        statusMessage: {
+          status: 'running',
+          detail: '正在生成 Prompt 草案，请稍候。',
+        },
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/projects/42?stage=prompt']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const toast = await screen.findByRole('alert');
+    expect(toast).toHaveTextContent('正在生成 Prompt 草案，请稍候。');
+    expect(toast).toHaveTextContent('处理中');
+  });
+
+  it('在运行中状态结束后会移除无限时长的处理中 toast', async () => {
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'prompt',
+        hasConfirmedScope: true,
+        hasParsedDocument: true,
+        isGeneratingDrafts: true,
+        statusMessage: {
+          status: 'running',
+          detail: '正在生成 Prompt 草案，请稍候。',
+        },
+      }),
+    );
+
+    const view = render(
+      <MemoryRouter initialEntries={['/projects/42?stage=prompt']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('正在生成 Prompt 草案，请稍候。');
+
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'prompt',
+        hasConfirmedScope: true,
+        hasParsedDocument: true,
+        isGeneratingDrafts: false,
+        statusMessage: null,
+      }),
+    );
+
+    view.rerender(
+      <MemoryRouter initialEntries={['/projects/42?stage=prompt']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+  });
+
   it('renders render stage when accepted drafts are ready for image generation', () => {
     mockUseProjectStudio.mockReturnValue(
       createStudioState({
@@ -191,6 +457,68 @@ describe('ProjectStudioPage', () => {
 
     expect(screen.getByText('本次默认参数')).toBeInTheDocument();
     expect(screen.getAllByText('整体架构图').length).toBeGreaterThan(0);
+  });
+
+  it('在 RenderStage 出现处理中资产时显示运行中 toast', async () => {
+    mockUseProjectStudio.mockReturnValue(
+      createStudioState({
+        currentStage: 'render',
+        hasConfirmedScope: true,
+        hasParsedDocument: true,
+        promptDrafts: [
+          {
+            id: 'draft-1',
+            title: '整体架构图',
+            figureType: 'overall_framework',
+            status: 'accepted',
+            promptText: '请生成整体架构图',
+            generationStatus: 'completed',
+            sourceSections: [{ index: 0, title: '1 Introduction' }],
+          },
+        ],
+        renderAssets: [
+          {
+            id: 'asset-1',
+            promptId: 'draft-1',
+            title: '整体架构图',
+            figureType: 'overall_framework',
+            status: 'processing',
+            rawStatus: 'processing',
+            promptText: '请生成整体架构图',
+            latestImageId: null,
+            previewUrl: null,
+            generationError: null,
+            effectiveSettings: {
+              resolution: '2K',
+              aspectRatio: '16:9',
+              colorScheme: 'okabe-ito',
+            },
+            overrideSettings: {},
+          },
+        ],
+        tasks: [
+          {
+            id: 'render-running',
+            type: '图片渲染',
+            target: '1 张图片',
+            status: 'running',
+            detail: '后台正在生成图片，可在生成配图阶段查看进度。',
+          },
+        ],
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/projects/42?stage=render']}>
+        <Routes>
+          <Route path="/projects/:id" element={<ProjectStudioPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const toast = await screen.findByRole('alert');
+    expect(toast).toHaveTextContent('后台正在生成图片，可在生成配图阶段查看进度。');
+    expect(toast).toHaveTextContent('处理中');
   });
 
   it('renders review stage when completed images are ready for polish delivery', () => {

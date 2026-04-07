@@ -22,7 +22,12 @@ from app.dependencies import get_current_active_user, get_db
 from app.models.system_settings import SystemSettings
 from app.models.user import User
 from app.schemas.nanobanana import NanoBananaModelsProbeRequest, NanoBananaModelsResponse
-from app.schemas.prompt_ai import PromptAIModelsProbeRequest, PromptAIModelsResponse
+from app.schemas.prompt_ai import (
+    PromptAIEffectiveConfigResponse,
+    PromptAIModelsProbeRequest,
+    PromptAIModelsResponse,
+    PromptAIResolvePreviewRequest,
+)
 from app.schemas.auth import (
     ChangePassword,
     TokenRefresh,
@@ -36,7 +41,9 @@ from app.services.prompt_ai_service import (
     PromptAIConfigLayer,
     PromptAIService,
     get_env_prompt_ai_config_layer,
+    resolve_prompt_ai_effective_config,
     resolve_prompt_ai_settings,
+    validate_prompt_ai_model_config,
 )
 from app.services.nanobanana_service import (
     NanoBananaConfigLayer,
@@ -55,8 +62,33 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 # ---------------------------------------------------------------------------
 
 
-def _user_to_response(user: User) -> UserResponse:
+async def _user_to_response(user: User, db: AsyncSession) -> UserResponse:
     """Map a User ORM object to UserResponse, computing derived fields."""
+    settings = (
+        await db.execute(select(SystemSettings).where(SystemSettings.id == 1))
+    ).scalar_one_or_none()
+    env_prompt_ai = get_env_prompt_ai_config_layer()
+    env_nanobanana = get_env_nanobanana_config_layer()
+    prompt_ai_available = bool(
+        user.prompt_ai_api_key_enc
+        or (settings and settings.prompt_ai_api_key_enc)
+        or env_prompt_ai.api_key
+    )
+    nanobanana_available = bool(
+        user.nanobanana_api_key_enc
+        or (settings and settings.nanobanana_api_key_enc)
+        or env_nanobanana.api_key
+    )
+    paddleocr_available = bool(
+        settings
+        and settings.paddleocr_server_url
+        and settings.paddleocr_api_key_enc
+    )
+    effective_prompt_ai = await _resolve_my_prompt_ai_effective_config(
+        user=user,
+        db=db,
+    )
+
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -67,20 +99,123 @@ def _user_to_response(user: User) -> UserResponse:
         default_resolution=user.default_resolution,
         default_aspect_ratio=user.default_aspect_ratio,
         prompt_ai_provider=user.prompt_ai_provider,
-        prompt_ai_api_key_set=user.prompt_ai_api_key_enc is not None,
-        prompt_ai_model=user.prompt_ai_model,
-        nanobanana_api_key_set=user.nanobanana_api_key_enc is not None,
-        nanobanana_model=user.nanobanana_model,
-        paddleocr_api_key_set=user.paddleocr_token_enc is not None,
+        prompt_ai_api_key_set=bool(user.prompt_ai_api_key_enc),
         prompt_ai_api_base_url=user.prompt_ai_api_base_url,
-        nanobanana_api_base_url=user.nanobanana_api_base_url,
-        paddleocr_server_url=user.paddleocr_server_url,
+        prompt_ai_model=user.prompt_ai_model,
+        prompt_ai_effective_config=_prompt_ai_effective_config_to_response(
+            effective_prompt_ai
+        ),
+        prompt_ai_available=prompt_ai_available,
+        nanobanana_available=nanobanana_available,
+        paddleocr_available=paddleocr_available,
         prompt_ai_tokens_quota=user.prompt_ai_tokens_quota,
         nanobanana_images_quota=user.nanobanana_images_quota,
         linuxdo_id=user.linuxdo_id,
         linuxdo_username=user.linuxdo_username,
         linuxdo_avatar_url=user.linuxdo_avatar_url,
         created_at=user.created_at,
+    )
+
+
+def _prompt_ai_effective_config_to_response(
+    effective,
+) -> PromptAIEffectiveConfigResponse:
+    return PromptAIEffectiveConfigResponse(
+        provider=effective.provider,
+        api_base_url=effective.api_base_url,
+        model=effective.model,
+        max_tokens=effective.max_tokens,
+        api_key_available=effective.api_key_available,
+        sources={
+            "provider": effective.sources["provider"]
+            if isinstance(effective.sources, dict)
+            else effective.sources.provider,
+            "api_key": effective.sources["api_key"]
+            if isinstance(effective.sources, dict)
+            else effective.sources.api_key,
+            "api_base_url": effective.sources["api_base_url"]
+            if isinstance(effective.sources, dict)
+            else effective.sources.api_base_url,
+            "model": effective.sources["model"]
+            if isinstance(effective.sources, dict)
+            else effective.sources.model,
+            "max_tokens": effective.sources["max_tokens"]
+            if isinstance(effective.sources, dict)
+            else effective.sources.max_tokens,
+        },
+        validation_status=effective.validation_status,
+        validation_message=effective.validation_message,
+    )
+
+
+async def _resolve_my_prompt_ai_effective_config(
+    *,
+    user: User,
+    db: AsyncSession,
+    draft_layer: PromptAIConfigLayer | None = None,
+) -> object:
+    effective = resolve_prompt_ai_effective_config(
+        user_layer=PromptAIConfigLayer(
+            provider=(
+                draft_layer.provider
+                if draft_layer and draft_layer.provider is not None
+                else user.prompt_ai_provider
+            ),
+            api_key=(
+                draft_layer.api_key
+                if draft_layer and draft_layer.api_key is not None
+                else (
+                    decrypt_api_key(user.prompt_ai_api_key_enc)
+                    if user.prompt_ai_api_key_enc
+                    else None
+                )
+            ),
+            api_base_url=(
+                draft_layer.api_base_url
+                if draft_layer and draft_layer.api_base_url is not None
+                else user.prompt_ai_api_base_url
+            ),
+            model=(
+                draft_layer.model
+                if draft_layer and draft_layer.model is not None
+                else user.prompt_ai_model
+            ),
+        ),
+        system_layer=await _get_system_prompt_ai_layer(db),
+        env_layer=get_env_prompt_ai_config_layer(),
+    )
+
+    if effective.api_key_available and effective.model:
+        try:
+            service = PromptAIService(
+                provider=effective.provider,
+                api_key=(
+                    draft_layer.api_key
+                    if draft_layer and draft_layer.api_key is not None
+                    else (
+                        decrypt_api_key(user.prompt_ai_api_key_enc)
+                        if user.prompt_ai_api_key_enc
+                        else None
+                    )
+                ),
+                api_base_url=effective.api_base_url,
+                model=effective.model,
+                max_tokens=effective.max_tokens,
+            )
+            models = await service.list_models()
+            return await validate_prompt_ai_model_config(
+                effective,
+                model_options=models,
+            )
+        except Exception:
+            return await validate_prompt_ai_model_config(
+                effective,
+                model_options=None,
+            )
+
+    return await validate_prompt_ai_model_config(
+        effective,
+        model_options=None,
     )
 
 
@@ -147,7 +282,7 @@ async def register(
     db.add(user)
     await db.flush()
     await db.refresh(user)
-    return _user_to_response(user)
+    return await _user_to_response(user, db)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -202,9 +337,10 @@ async def refresh(
 @router.get("/me", response_model=UserResponse)
 async def get_me(
     user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Return the current authenticated user's profile."""
-    return _user_to_response(user)
+    return await _user_to_response(user, db)
 
 
 @router.put("/me", response_model=UserResponse)
@@ -214,38 +350,42 @@ async def update_me(
     db: AsyncSession = Depends(get_db),
 ):
     """Update the current user's profile and preferences."""
+    draft_updates = data.model_dump(exclude_unset=True)
+    prompt_ai_fields = {
+        "prompt_ai_provider",
+        "prompt_ai_api_key",
+        "prompt_ai_api_base_url",
+        "prompt_ai_model",
+    }
+    if prompt_ai_fields & set(draft_updates):
+        effective = await _resolve_my_prompt_ai_effective_config(
+            user=user,
+            db=db,
+            draft_layer=PromptAIConfigLayer(
+                provider=draft_updates.get("prompt_ai_provider"),
+                api_key=draft_updates.get("prompt_ai_api_key"),
+                api_base_url=draft_updates.get("prompt_ai_api_base_url"),
+                model=draft_updates.get("prompt_ai_model"),
+            ),
+        )
+        if effective.validation_status == "invalid":
+            raise BadRequestException(
+                effective.validation_message or "当前 Prompt AI 配置无效。"
+            )
+
     updates = data.model_dump(exclude_unset=True)
 
-    # Handle API key encryption separately
     if "prompt_ai_api_key" in updates:
         raw_key = updates.pop("prompt_ai_api_key")
-        if raw_key:
-            user.prompt_ai_api_key_enc = encrypt_api_key(raw_key)
-        else:
-            user.prompt_ai_api_key_enc = None
+        user.prompt_ai_api_key_enc = encrypt_api_key(raw_key) if raw_key else None
 
-    if "nanobanana_api_key" in updates:
-        raw_key = updates.pop("nanobanana_api_key")
-        if raw_key:
-            user.nanobanana_api_key_enc = encrypt_api_key(raw_key)
-        else:
-            user.nanobanana_api_key_enc = None
-
-    if "paddleocr_api_key" in updates:
-        raw_key = updates.pop("paddleocr_api_key")
-        if raw_key:
-            user.paddleocr_token_enc = encrypt_api_key(raw_key)
-        else:
-            user.paddleocr_token_enc = None
-
-    # Apply remaining scalar updates
     for field, value in updates.items():
         setattr(user, field, value)
 
     db.add(user)
     await db.flush()
     await db.refresh(user)
-    return _user_to_response(user)
+    return await _user_to_response(user, db)
 
 
 @router.put("/me/password")
@@ -265,6 +405,28 @@ async def change_password(
     db.add(user)
     await db.flush()
     return {"message": "密码修改成功"}
+
+
+@router.post(
+    "/me/prompt-ai/resolve-preview",
+    response_model=PromptAIEffectiveConfigResponse,
+)
+async def resolve_my_prompt_ai_preview(
+    data: PromptAIResolvePreviewRequest,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    effective = await _resolve_my_prompt_ai_effective_config(
+        user=user,
+        db=db,
+        draft_layer=PromptAIConfigLayer(
+            provider=data.prompt_ai_provider,
+            api_key=data.prompt_ai_api_key,
+            api_base_url=data.prompt_ai_api_base_url,
+            model=data.prompt_ai_model,
+        ),
+    )
+    return _prompt_ai_effective_config_to_response(effective)
 
 
 @router.post("/me/prompt-ai/models", response_model=PromptAIModelsResponse)

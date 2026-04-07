@@ -1,6 +1,12 @@
 export type StudioStage = 'ingest' | 'scope' | 'prompt' | 'render' | 'review';
 export type StudioScopeMode = 'preset' | 'custom';
 export type StudioPromptMode = 'overall' | 'sections';
+export type StudioPromptFigureType =
+  | 'overall_framework'
+  | 'network_architecture'
+  | 'module_detail'
+  | 'comparison_ablation'
+  | 'data_behavior';
 export type StudioScopePresetId =
   | 'full-paper'
   | 'methods-models'

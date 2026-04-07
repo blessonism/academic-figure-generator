@@ -18,6 +18,7 @@ interface PromptAIModelFieldProps {
     onFetch: () => void | Promise<void>;
     isFetching: boolean;
     models: PromptAIModelOption[];
+    fetchButtonAriaLabel?: string;
     fetchHint: string;
     message: string;
     error: string;
@@ -32,6 +33,7 @@ export function PromptAIModelField({
     onFetch,
     isFetching,
     models,
+    fetchButtonAriaLabel,
     fetchHint,
     message,
     error,
@@ -50,7 +52,10 @@ export function PromptAIModelField({
     useEffect(() => {
         if (models.length === 0) {
             setIsOpen(false);
+            return;
         }
+
+        setIsOpen(true);
     }, [models]);
 
     return (
@@ -61,6 +66,7 @@ export function PromptAIModelField({
                     type="button"
                     variant="outline"
                     size="sm"
+                    aria-label={fetchButtonAriaLabel}
                     onClick={onFetch}
                     disabled={isFetching}
                 >

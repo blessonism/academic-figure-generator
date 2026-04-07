@@ -1,13 +1,16 @@
 import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Loader2, Wand2, Image as ImageIcon, Download, AlertCircle } from 'lucide-react';
+import { ShiningText } from '../components/ui/shining-text';
+import { Loader2, Wand2, Image as ImageIcon, Download, AlertCircle, Sparkles } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { api } from '../lib/api';
 import { fetchAuthedBlob } from '../lib/blob';
-import { getApiErrorMessage } from '../lib/apiError';
+import { getApiErrorMessage, humanizeErrorText } from '../lib/apiError';
+import type { MarketItem } from '@/lib/market';
 
 type ImagePricing = {
    currency: string;
@@ -19,6 +22,8 @@ type ImagePricing = {
 
 export function Generate() {
    const { user } = useAuthStore();
+   const [searchParams] = useSearchParams();
+   const referenceMarketItemId = searchParams.get('referenceMarketItemId');
    const [prompt, setPrompt] = useState('');
    const [aspectRatio, setAspectRatio] = useState('16:9');
    const [isGenerating, setIsGenerating] = useState(false);
@@ -28,6 +33,7 @@ export function Generate() {
    const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
    const blobUrlRef = useRef<string | null>(null);
    const [imagePricing, setImagePricing] = useState<ImagePricing | null>(null);
+   const [referenceMarketItem, setReferenceMarketItem] = useState<MarketItem | null>(null);
 
    useEffect(() => {
       return () => {
@@ -52,6 +58,29 @@ export function Generate() {
       })();
       return () => { mounted = false; };
    }, []);
+
+   useEffect(() => {
+      if (!referenceMarketItemId) {
+         setReferenceMarketItem(null);
+         return;
+      }
+
+      let mounted = true;
+      (async () => {
+         try {
+            const response = await api.get(`/market/items/${referenceMarketItemId}`);
+            if (!mounted) return;
+            setReferenceMarketItem(response.data || null);
+         } catch (e: unknown) {
+            if (!mounted) return;
+            setReferenceMarketItem(null);
+            setError(getApiErrorMessage(e, '市场垫图加载失败，请返回市场页重新选择。'));
+         }
+      })();
+      return () => {
+         mounted = false;
+      };
+   }, [referenceMarketItemId]);
 
    const stopPolling = () => {
       if (pollTimerRef.current) {
@@ -83,10 +112,10 @@ export function Generate() {
          } else if (status === 'failed') {
             setResultImage({ url: '', filename: 'academic-figure.png', status: 'failed' });
             setProcessingMessage(null);
-            setError(statusRes.data.generation_error || '图片生成失败，请稍后重试');
+            setError(humanizeErrorText(statusRes.data.generation_error) || '图片生成失败，请稍后重试');
             setIsGenerating(false);
          } else {
-            setProcessingMessage(statusRes.data.generation_error || null);
+            setProcessingMessage(humanizeErrorText(statusRes.data.generation_error) || null);
             pollTimerRef.current = setTimeout(() => {
                void pollStatus(imageId);
             }, 3000);
@@ -107,10 +136,15 @@ export function Generate() {
       setProcessingMessage(null);
 
       try {
-         const response = await api.post('/images/generate-direct', {
-            prompt,
-            aspect_ratio: aspectRatio,
-         });
+         const response = referenceMarketItemId
+            ? await api.post(`/market/items/${referenceMarketItemId}/generate-from-reference`, {
+               edit_instruction: prompt,
+               aspect_ratio: aspectRatio,
+            })
+            : await api.post('/images/generate-direct', {
+               prompt,
+               aspect_ratio: aspectRatio,
+            });
 
          const imageId = response.data.id;
          pollTimerRef.current = setTimeout(() => pollStatus(imageId), 3000);
@@ -131,13 +165,37 @@ export function Generate() {
       <div className="max-w-4xl mx-auto space-y-6">
          <div className="space-y-2">
             <div className="inline-flex items-center rounded-full border bg-muted/30 px-3 py-1 text-xs font-medium text-muted-foreground">
-               Quick Lab
+               {referenceMarketItem ? '市场垫图模式' : 'Quick Lab'}
             </div>
             <div>
                <h1 className="text-3xl font-bold tracking-tight">Quick Lab</h1>
-               <p className="text-muted-foreground mt-1">跳过 Studio 项目的文档链路，直接验证配图想法。后续会支持把结果保存回项目继续精修。</p>
+               <p className="text-muted-foreground mt-1">
+                  {referenceMarketItem
+                     ? '已从配图市场带入参考图。你现在可以基于现有配图继续生成变体或精修版本。'
+                     : '跳过 Studio 项目的文档链路，直接验证配图想法。后续会支持把结果保存回项目继续精修。'}
+               </p>
             </div>
          </div>
+
+         {referenceMarketItem ? (
+            <Card className="border-sky-200 bg-sky-50/70">
+               <CardContent className="flex flex-col gap-4 pt-6 md:flex-row md:items-center">
+                  <img
+                     src={referenceMarketItem.cover_download_url}
+                     alt={referenceMarketItem.title}
+                     className="h-28 w-full rounded-xl border object-cover md:w-44"
+                  />
+                  <div className="space-y-2">
+                     <div className="flex items-center gap-2 text-sky-700">
+                        <Sparkles className="h-4 w-4" />
+                        <span className="text-sm font-medium">市场垫图模式</span>
+                     </div>
+                     <p className="text-base font-semibold text-slate-900">{referenceMarketItem.title}</p>
+                     <p className="text-sm text-slate-600">{referenceMarketItem.summary || '已带入市场主图作为参考图。'}</p>
+                  </div>
+               </CardContent>
+            </Card>
+         ) : null}
 
          {error && (
             <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
@@ -150,12 +208,20 @@ export function Generate() {
             <div className="space-y-6">
                <Card>
                   <CardHeader>
-                     <CardTitle>配图描述</CardTitle>
-                     <CardDescription>用文字详细描述您想要生成的论文配图。</CardDescription>
+                     <CardTitle>{referenceMarketItem ? '编辑/变体说明' : '配图描述'}</CardTitle>
+                     <CardDescription>
+                        {referenceMarketItem
+                           ? '请说明你希望基于当前市场图如何变化，例如调色、改布局、增加模块或替换风格。'
+                           : '用文字详细描述您想要生成的论文配图。'}
+                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                      <Textarea
-                        placeholder="例如：绘制一个基于Transformer的跨模态融合架构图。包含两个分支：视觉编码器和文本编码器，它们在中间层通过自注意力机制进行跨模态交互，最后输出分类结果..."
+                        placeholder={
+                           referenceMarketItem
+                              ? '例如：保留整体结构，但改成蓝绿色学术配色，并让模块标注更清晰，适合论文插图。'
+                              : '例如：绘制一个基于Transformer的跨模态融合架构图。包含两个分支：视觉编码器和文本编码器，它们在中间层通过自注意力机制进行跨模态交互，最后输出分类结果...'
+                        }
                         className="min-h-[200px]"
                         value={prompt}
                         onChange={e => setPrompt(e.target.value)}
@@ -183,7 +249,7 @@ export function Generate() {
                         </Button>
                         <Button onClick={handleGenerate} disabled={isGenerating || !prompt.trim()}>
                            {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Wand2 className="w-4 h-4 mr-2" />}
-                           {isGenerating ? '生成中...' : '开始试生成'}
+                           {isGenerating ? '生成中...' : referenceMarketItem ? '开始基于垫图生成' : '开始试生成'}
                         </Button>
                      </div>
                   </CardFooter>
@@ -200,7 +266,10 @@ export function Generate() {
                      {isGenerating ? (
                         <div className="text-center">
                            <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
-                           <p className="text-sm text-muted-foreground mt-4">AI 正在努力绘制中，请耐心等待...</p>
+                           <div className="mt-4 flex justify-center">
+                              <ShiningText text="Academic Figure Generator is thinking..." />
+                           </div>
+                           <p className="text-sm text-muted-foreground mt-3">AI 正在努力绘制中，请耐心等待...</p>
                            {processingMessage && (
                               <div className="mt-4 max-w-sm rounded-md border bg-background/80 px-4 py-3 text-left">
                                  <p className="text-sm font-medium text-foreground">系统正在自动重试</p>

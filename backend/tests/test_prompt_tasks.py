@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from app.tasks.prompt_tasks import _parse_figure_prompts
+from app.tasks.prompt_tasks import _extract_source_sections, _parse_figure_prompts
 
 
 def test_parse_figure_prompts_accepts_valid_json_array() -> None:
@@ -47,3 +47,12 @@ def test_parse_figure_prompts_still_rejects_structurally_invalid_json() -> None:
 
     with pytest.raises(json.JSONDecodeError):
         _parse_figure_prompts(raw)
+
+
+def test_extract_source_sections_returns_prompt_ai_titles_list() -> None:
+    figure = {
+        "title": "Figure 1",
+        "source_section_titles": ["1 Introduction", "2 Method"],
+    }
+
+    assert _extract_source_sections(figure) == ["1 Introduction", "2 Method"]

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import type { PromptAIEffectiveConfig } from '@/components/PromptAIEffectiveConfigSummary';
+
 export interface User {
     id: number;
     email: string;
@@ -12,13 +14,12 @@ export interface User {
     default_aspect_ratio?: string | null;
     prompt_ai_provider?: 'anthropic' | 'openai-compatible';
     prompt_ai_api_key_set?: boolean;
-    prompt_ai_model?: string | null;
-    nanobanana_api_key_set?: boolean;
-    nanobanana_model?: string | null;
-    paddleocr_api_key_set?: boolean;
     prompt_ai_api_base_url?: string | null;
-    nanobanana_api_base_url?: string | null;
-    paddleocr_server_url?: string | null;
+    prompt_ai_model?: string | null;
+    prompt_ai_effective_config?: PromptAIEffectiveConfig | null;
+    prompt_ai_available?: boolean;
+    nanobanana_available?: boolean;
+    paddleocr_available?: boolean;
     prompt_ai_tokens_quota?: number;
     nanobanana_images_quota?: number;
     linuxdo_id?: number | null;

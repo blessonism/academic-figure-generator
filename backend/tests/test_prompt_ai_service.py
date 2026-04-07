@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from app.services.prompt_ai_service import (
+    PromptAIEffectiveConfig,
     PromptAIService,
     _parse_prompt_ai_http_response,
     PromptAIConfigLayer,
@@ -12,7 +13,9 @@ from app.services.prompt_ai_service import (
     normalize_prompt_ai_api_url,
     normalize_prompt_ai_models_url,
     normalize_prompt_ai_provider,
+    resolve_prompt_ai_effective_config,
     resolve_prompt_ai_settings,
+    validate_prompt_ai_model_config,
 )
 
 
@@ -186,6 +189,155 @@ def test_resolve_prompt_ai_settings_falls_back_to_system_then_env() -> None:
     assert resolved.model == "gpt-4o-mini"
     assert resolved.max_tokens == 2048
     assert resolved.key_source == "platform"
+
+
+def test_resolve_prompt_ai_settings_tracks_field_sources() -> None:
+    resolved = resolve_prompt_ai_settings(
+        user_layer=PromptAIConfigLayer(
+            provider="openai-compatible",
+            model="grok-4.1-expert",
+        ),
+        system_layer=PromptAIConfigLayer(
+            api_key="system-key",
+            api_base_url="https://system.example.com",
+            max_tokens=4096,
+        ),
+        env_layer=PromptAIConfigLayer(),
+    )
+
+    assert resolved.provider == "openai-compatible"
+    assert resolved.model == "grok-4.1-expert"
+    assert resolved.api_base_url == "https://system.example.com"
+    assert resolved.sources.provider == "user"
+    assert resolved.sources.model == "user"
+    assert resolved.sources.api_base_url == "system"
+    assert resolved.sources.api_key == "system"
+    assert resolved.sources.max_tokens == "system"
+
+
+def test_resolve_prompt_ai_settings_uses_env_model_without_code_default() -> None:
+    resolved = resolve_prompt_ai_settings(
+        user_layer=PromptAIConfigLayer(),
+        system_layer=PromptAIConfigLayer(),
+        env_layer=PromptAIConfigLayer(
+            provider="openai-compatible",
+            api_key="env-key",
+            api_base_url="https://env.example.com",
+            model="grok-4.1-fast",
+        ),
+    )
+
+    assert resolved.model == "grok-4.1-fast"
+    assert resolved.sources.model == "env"
+
+
+def test_resolve_prompt_ai_settings_marks_missing_model_instead_of_falling_back() -> None:
+    resolved = resolve_prompt_ai_settings(
+        user_layer=PromptAIConfigLayer(provider="openai-compatible"),
+        system_layer=PromptAIConfigLayer(api_key="system-key"),
+        env_layer=PromptAIConfigLayer(),
+    )
+
+    assert resolved.model == ""
+    assert resolved.sources.model == "missing"
+
+
+def test_resolve_prompt_ai_effective_config_exposes_missing_model_status() -> None:
+    effective = resolve_prompt_ai_effective_config(
+        user_layer=PromptAIConfigLayer(provider="openai-compatible"),
+        system_layer=PromptAIConfigLayer(api_key="system-key"),
+        env_layer=PromptAIConfigLayer(),
+    )
+
+    assert isinstance(effective, PromptAIEffectiveConfig)
+    assert effective.validation_status == "invalid"
+    assert "模型" in (effective.validation_message or "")
+    assert effective.sources.model == "missing"
+
+
+@pytest.mark.asyncio
+async def test_validate_prompt_ai_model_config_returns_valid_when_model_exists() -> None:
+    effective = PromptAIEffectiveConfig(
+        provider="openai-compatible",
+        api_base_url="https://example.com",
+        model="grok-4.1-expert",
+        max_tokens=8192,
+        api_key_available=True,
+        sources={
+            "provider": "user",
+            "api_key": "user",
+            "api_base_url": "user",
+            "model": "user",
+            "max_tokens": "service_default",
+        },
+        validation_status="unknown",
+        validation_message=None,
+    )
+
+    validated = await validate_prompt_ai_model_config(
+        effective,
+        model_options=[
+            {"id": "grok-4.1-expert", "display_name": "Grok 4.1 Expert"},
+        ],
+    )
+
+    assert validated.validation_status == "valid"
+    assert validated.validation_message is None
+
+
+@pytest.mark.asyncio
+async def test_validate_prompt_ai_model_config_returns_invalid_when_model_missing() -> None:
+    effective = PromptAIEffectiveConfig(
+        provider="openai-compatible",
+        api_base_url="https://example.com",
+        model="grok-4.1-expert",
+        max_tokens=8192,
+        api_key_available=True,
+        sources={
+            "provider": "user",
+            "api_key": "user",
+            "api_base_url": "user",
+            "model": "user",
+            "max_tokens": "service_default",
+        },
+        validation_status="unknown",
+        validation_message=None,
+    )
+
+    validated = await validate_prompt_ai_model_config(
+        effective,
+        model_options=[
+            {"id": "claude-sonnet-4-20250514", "display_name": "Claude Sonnet 4"},
+        ],
+    )
+
+    assert validated.validation_status == "invalid"
+    assert "grok-4.1-expert" in (validated.validation_message or "")
+
+
+@pytest.mark.asyncio
+async def test_validate_prompt_ai_model_config_returns_unknown_without_key() -> None:
+    effective = PromptAIEffectiveConfig(
+        provider="openai-compatible",
+        api_base_url="https://example.com",
+        model="grok-4.1-expert",
+        max_tokens=8192,
+        api_key_available=False,
+        sources={
+            "provider": "system",
+            "api_key": "missing",
+            "api_base_url": "system",
+            "model": "system",
+            "max_tokens": "service_default",
+        },
+        validation_status="unknown",
+        validation_message=None,
+    )
+
+    validated = await validate_prompt_ai_model_config(effective, model_options=None)
+
+    assert validated.validation_status == "unknown"
+    assert "尚未验证" in (validated.validation_message or "")
 
 
 def test_build_payload_for_openai_compatible_disables_streaming() -> None:

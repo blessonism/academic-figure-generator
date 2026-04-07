@@ -4,11 +4,12 @@ import { useParams, useSearchParams } from 'react-router-dom';
 
 import { fetchAuthedBlob, triggerBrowserDownload } from '@/lib/blob';
 import { api } from '@/lib/api';
-import { getApiErrorMessage } from '@/lib/apiError';
+import { getApiErrorMessage, humanizeErrorText } from '@/lib/apiError';
 import { useAuthStore } from '@/store/authStore';
 import { useProjectStore } from '@/store/projectStore';
 
 import { STUDIO_SCOPE_PRESET_LABELS, STUDIO_STAGE_ORDER } from './constants';
+import { resolvePromptGenerationPayload } from './promptGeneration';
 import { getFirstAccessibleStage, getPresetSectionIndices } from './selectors';
 import type {
   StudioConfirmedScope,
@@ -18,6 +19,7 @@ import type {
   StudioHealthItem,
   StudioImagePricing,
   StudioPromptDraft,
+  StudioPromptFigureType,
   StudioPromptDraftReviewStatus,
   StudioPromptMode,
   StudioPromptSourceSection,
@@ -76,6 +78,17 @@ interface ApiColorSchemeOption {
   display_name?: string | null;
 }
 
+interface ApiTaskStatus {
+  task_id?: string | null;
+  status?: string | null;
+  detail?: string | null;
+}
+
+// 后端 Prompt 任务单次请求允许约 210 秒，Celery 软超时为 240 秒。
+// 前端需要给出略高于单次任务预算的等待窗口，避免 90 秒时误判为失败。
+const PROMPT_GENERATION_POLL_INTERVAL_MS = 2_000;
+const PROMPT_GENERATION_CLIENT_TIMEOUT_MS = 270_000;
+
 function normalizeRenderParameters(
   value?: Partial<StudioRenderParameters> | null,
 ): Partial<StudioRenderParameters> {
@@ -86,7 +99,21 @@ function normalizeRenderParameters(
   };
 }
 
-function getRenderAssetStatus(rawStatus?: string | null): StudioRenderAsset['status'] {
+function normalizeDocumentItem(document: StudioDocumentItem): StudioDocumentItem {
+  return {
+    ...document,
+    parse_error: humanizeErrorText(document.parse_error ?? null) ?? document.parse_error,
+  };
+}
+
+function isRetryingGenerationError(generationError?: string | null): boolean {
+  return Boolean(generationError?.includes('系统正在自动重试'));
+}
+
+function getRenderAssetStatus(
+  rawStatus?: string | null,
+  generationError?: string | null,
+): StudioRenderAsset['status'] {
   if (rawStatus === 'completed') {
     return 'completed';
   }
@@ -96,6 +123,10 @@ function getRenderAssetStatus(rawStatus?: string | null): StudioRenderAsset['sta
   }
 
   if (rawStatus === 'processing' || rawStatus === 'pending') {
+    if (generationError && !isRetryingGenerationError(generationError)) {
+      return 'failed';
+    }
+
     return 'processing';
   }
 
@@ -187,6 +218,14 @@ function normalizePromptSourceSections(sourceSections: unknown): StudioPromptSou
       return normalizePromptSourceSections(record.sections);
     }
 
+    if (Array.isArray(record.titles)) {
+      return normalizePromptSourceSections(record.titles);
+    }
+
+    if (Array.isArray(record.source_section_titles)) {
+      return normalizePromptSourceSections(record.source_section_titles);
+    }
+
     return Object.entries(record).map(([key, value], index) => ({
       index,
       title: typeof value === 'string' ? value : key,
@@ -215,7 +254,10 @@ function normalizePromptDraft(
 
 function getRetryingRenderDetail(assets: StudioRenderAsset[]): string | null {
   return (
-    assets.find((asset) => asset.status === 'processing' && Boolean(asset.generationError))
+    assets.find(
+      (asset) =>
+        asset.status === 'processing' && isRetryingGenerationError(asset.generationError),
+    )
       ?.generationError ?? null
   );
 }
@@ -274,9 +316,13 @@ export function useProjectStudio() {
   const [selectedSectionIndices, setSelectedSectionIndices] = useState<number[]>([]);
   const [confirmedScope, setConfirmedScope] = useState<StudioConfirmedScope | null>(null);
   const [promptMode, setPromptMode] = useState<StudioPromptMode>('overall');
+  const [overallPromptFigureType, setOverallPromptFigureType] =
+    useState<StudioPromptFigureType>('overall_framework');
+  const [sectionPromptFigureTypes, setSectionPromptFigureTypes] = useState<StudioPromptFigureType[]>([]);
   const [promptRequest, setPromptRequest] = useState('');
   const [templateMode, setTemplateMode] = useState(false);
   const [isGeneratingDrafts, setIsGeneratingDrafts] = useState(false);
+  const [promptGenerationFailureDetail, setPromptGenerationFailureDetail] = useState<string | null>(null);
   const [savingPromptIds, setSavingPromptIds] = useState<Record<string, boolean>>({});
   const [images, setImages] = useState<ApiProjectImage[]>([]);
   const [renderColorSchemeOptions, setRenderColorSchemeOptions] = useState<StudioColorSchemeOption[]>([]);
@@ -325,7 +371,7 @@ export function useProjectStudio() {
         ]);
 
         setCurrentProject(projectResponse.data);
-        setDocuments(documentsResponse.data || []);
+        setDocuments((documentsResponse.data || []).map(normalizeDocumentItem));
 
         try {
           const promptsResponse = await api.get(`/projects/${projectId}/prompts`);
@@ -586,9 +632,9 @@ export function useProjectStudio() {
     scopeRestoreKeyRef.current = restoreKey;
   }, [confirmedScope, parsedDocument, parsedSections.length]);
 
-  const hasOcrConfig = Boolean(user?.paddleocr_api_key_set && user?.paddleocr_server_url);
-  const hasPromptConfig = Boolean(user?.prompt_ai_provider && user?.prompt_ai_api_key_set);
-  const hasImageConfig = Boolean(user?.nanobanana_api_key_set);
+  const hasOcrConfig = Boolean(user?.paddleocr_available);
+  const hasPromptConfig = Boolean(user?.prompt_ai_available);
+  const hasImageConfig = Boolean(user?.nanobanana_available);
   const renderProjectDefaults = useMemo<StudioRenderParameters>(
     () => ({
       resolution: user?.default_resolution || '2K',
@@ -658,12 +704,15 @@ export function useProjectStudio() {
           promptId: draft.id,
           title: draft.title,
           figureType: draft.figureType,
-          status: getRenderAssetStatus(latestImage?.generation_status),
+          status: getRenderAssetStatus(
+            latestImage?.generation_status,
+            latestImage?.generation_error,
+          ),
           rawStatus: latestImage?.generation_status || 'pending',
           promptText: draft.promptText,
           latestImageId: latestImage?.id ?? null,
           previewUrl: latestImage ? previewUrls[latestImage.id] ?? null : null,
-          generationError: latestImage?.generation_error ?? null,
+          generationError: humanizeErrorText(latestImage?.generation_error ?? null),
           effectiveSettings,
           overrideSettings,
           suggestedAspectRatio: draft.suggestedAspectRatio,
@@ -710,10 +759,10 @@ export function useProjectStudio() {
             id: image.id,
             imageId: image.id,
             label: versionNumber === 0 ? '原始生成' : `精修 ${versionNumber}`,
-            status: getRenderAssetStatus(image.generation_status),
+            status: getRenderAssetStatus(image.generation_status, image.generation_error),
             createdAt: image.created_at ?? null,
             previewUrl: previewUrls[image.id] ?? null,
-            generationError: image.generation_error ?? null,
+            generationError: humanizeErrorText(image.generation_error ?? null),
             editInstruction: image.edit_instruction ?? null,
             resolution: image.resolution || '2K',
             aspectRatio: image.aspect_ratio || '16:9',
@@ -806,11 +855,11 @@ export function useProjectStudio() {
       },
       {
         id: 'prompt-ai',
-        label: 'Prompt AI',
+        label: 'AI 配置',
         status: hasPromptConfig ? 'ready' : 'warning',
         description: hasPromptConfig
-          ? 'Prompt AI 已配置，可以生成可审核的配图草案。'
-          : '请先完成 Prompt AI 配置，否则无法进入草案生成阶段。',
+          ? 'AI 已配置，可以生成可审核的配图草案。'
+          : '请先完成 AI 配置，否则无法进入草案生成阶段。',
       },
       {
         id: 'image-ai',
@@ -879,7 +928,15 @@ export function useProjectStudio() {
         type: '草案生成',
         target: '生成草案',
         status: 'running',
-        detail: '正在调用 Prompt AI 生成配图草案，请稍候。',
+        detail: '正在调用 AI 生成配图草案，请稍候。',
+      });
+    } else if (promptGenerationFailureDetail) {
+      nextTasks.push({
+        id: 'prompt-generation-failed',
+        type: '草案生成',
+        target: '生成草案',
+        status: 'failed',
+        detail: promptGenerationFailureDetail,
       });
     }
 
@@ -957,6 +1014,7 @@ export function useProjectStudio() {
     hasParsedDocument,
     isGeneratingDrafts,
     isUploading,
+    promptGenerationFailureDetail,
     promptDrafts,
     renderAssets,
     uploadProgress,
@@ -1044,6 +1102,22 @@ export function useProjectStudio() {
     setPromptMode(nextMode);
   }, []);
 
+  const handleOverallPromptFigureTypeChange = useCallback((nextFigureType: StudioPromptFigureType) => {
+    setOverallPromptFigureType(nextFigureType);
+  }, []);
+
+  const handleSectionPromptFigureTypeToggle = useCallback((nextFigureType: StudioPromptFigureType) => {
+    setSectionPromptFigureTypes((previous) =>
+      previous.includes(nextFigureType)
+        ? previous.filter((value) => value !== nextFigureType)
+        : [...previous, nextFigureType],
+    );
+  }, []);
+
+  const handleSectionPromptFigureTypesReset = useCallback(() => {
+    setSectionPromptFigureTypes([]);
+  }, []);
+
   const handlePromptRequestChange = useCallback((nextRequest: string) => {
     setPromptRequest(nextRequest);
   }, []);
@@ -1097,7 +1171,7 @@ export function useProjectStudio() {
     if (!hasPromptConfig) {
       setStatusMessage({
         status: 'failed',
-        detail: '请先完成 Prompt AI 配置，再生成配图草案。',
+        detail: '请先完成 AI 配置，再生成配图草案。',
       });
       return;
     }
@@ -1111,6 +1185,7 @@ export function useProjectStudio() {
     }
 
     setIsGeneratingDrafts(true);
+    setPromptGenerationFailureDetail(null);
     setStatusMessage({
       status: 'running',
       detail: '正在生成 Prompt 草案，请稍候。',
@@ -1118,43 +1193,83 @@ export function useProjectStudio() {
 
     try {
       const beforeCount = promptDrafts.length;
-      await api.post(`/projects/${id}/prompts/generate`, {
+      const generationPayload = resolvePromptGenerationPayload({
+        promptMode,
+        overallPromptFigureType,
+        sectionPromptFigureTypes,
+      });
+      const generationResponse = await api.post(`/projects/${id}/prompts/generate`, {
         section_indices: selectedSectionIndices.length > 0 ? selectedSectionIndices : null,
         color_scheme: currentProject?.color_scheme || 'okabe-ito',
-        figure_types: promptMode === 'overall' ? ['overall_framework'] : null,
+        figure_types: generationPayload.figure_types,
         user_request: templateMode ? null : promptRequest.trim() || null,
-        max_figures: promptMode === 'overall' ? 1 : null,
+        max_figures: generationPayload.max_figures,
         template_mode: templateMode,
       });
+      const taskId = (generationResponse.data as ApiTaskStatus | undefined)?.task_id;
+      if (!taskId) {
+        throw new Error('草案任务已提交，但服务端没有返回 task_id。');
+      }
 
-      let nextPrompts: ApiPromptDraft[] = [];
-      const deadline = Date.now() + 90_000;
+      const deadline = Date.now() + PROMPT_GENERATION_CLIENT_TIMEOUT_MS;
+      let latestTaskDetail: string | null = null;
 
       while (Date.now() < deadline) {
-        await new Promise((resolve) => window.setTimeout(resolve, 2000));
-        const promptsResponse = await api.get(`/projects/${id}/prompts`);
-        nextPrompts = promptsResponse.data || [];
-        applyPromptDrafts(nextPrompts);
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, PROMPT_GENERATION_POLL_INTERVAL_MS),
+        );
+        const taskResponse = await api.get(`/tasks/${taskId}`);
+        const taskPayload = (taskResponse.data || {}) as ApiTaskStatus;
+        const taskStatus = (taskPayload.status || '').toUpperCase();
+        latestTaskDetail = humanizeErrorText(taskPayload.detail?.trim() || null);
 
-        if (nextPrompts.length > beforeCount) {
-          break;
+        if (taskStatus === 'FAILURE') {
+          const detail = latestTaskDetail || '请检查 AI 配置或稍后重试。';
+          setPromptGenerationFailureDetail(detail);
+          setStatusMessage({
+            status: 'failed',
+            detail: `草案生成失败：${detail}`,
+          });
+          return;
+        }
+
+        if (taskStatus === 'SUCCESS') {
+          const promptsResponse = await api.get(`/projects/${id}/prompts`);
+          const nextPrompts = promptsResponse.data || [];
+          applyPromptDrafts(nextPrompts);
+          await fetchProjectData(id, { showLoader: false });
+
+          const createdDraftCount = Math.max(0, nextPrompts.length - beforeCount);
+          setStatusMessage({
+            status: 'completed',
+            detail:
+              createdDraftCount > 0
+                ? `已生成 ${createdDraftCount} 条草案，请先确认后再继续出图。`
+                : '草案任务已完成，但当前没有新增草案，请检查 AI 输出。',
+          });
+          return;
+        }
+
+        if (taskStatus === 'RETRY' && latestTaskDetail) {
+          setStatusMessage({
+            status: 'running',
+            detail: latestTaskDetail,
+          });
         }
       }
 
-      await fetchProjectData(id, { showLoader: false });
-
-      const createdDraftCount = Math.max(0, nextPrompts.length - beforeCount);
-      setStatusMessage({
-        status: 'completed',
-        detail:
-          createdDraftCount > 0
-            ? `已生成 ${createdDraftCount} 条草案，请先确认后再继续出图。`
-            : '草案任务已提交，如果后台较慢可稍后回到本页继续查看。',
-      });
-    } catch (error) {
+      const timeoutDetail = latestTaskDetail || '后台任务长时间未返回结果，请稍后刷新查看。';
+      setPromptGenerationFailureDetail(timeoutDetail);
       setStatusMessage({
         status: 'failed',
-        detail: `草案生成失败：${getApiErrorMessage(error, '请检查 Prompt AI 配置或稍后重试。')}`,
+        detail: `草案生成失败：${timeoutDetail}`,
+      });
+    } catch (error) {
+      const detail = getApiErrorMessage(error, '请检查 AI 配置或稍后重试。');
+      setPromptGenerationFailureDetail(detail);
+      setStatusMessage({
+        status: 'failed',
+        detail: `草案生成失败：${detail}`,
       });
     } finally {
       setIsGeneratingDrafts(false);
@@ -1166,9 +1281,11 @@ export function useProjectStudio() {
     hasParsedDocument,
     hasPromptConfig,
     id,
+    overallPromptFigureType,
     promptDrafts.length,
     promptMode,
     promptRequest,
+    sectionPromptFigureTypes,
     selectedSectionIndices,
     templateMode,
   ]);
@@ -1485,7 +1602,7 @@ export function useProjectStudio() {
             (candidate: StudioDocumentItem) => candidate.id === document.id,
           );
 
-          setDocuments(nextDocuments);
+          setDocuments(nextDocuments.map(normalizeDocumentItem));
 
           if (
             updatedDocument &&
@@ -1552,6 +1669,8 @@ export function useProjectStudio() {
     selectedScopePresetId,
     selectedSectionIndices,
     promptMode,
+    overallPromptFigureType,
+    sectionPromptFigureTypes,
     promptRequest,
     templateMode,
     isGeneratingDrafts,
@@ -1571,6 +1690,9 @@ export function useProjectStudio() {
     handleScopePresetSelect,
     handleSelectedSectionIndicesChange,
     handlePromptModeChange,
+    handleOverallPromptFigureTypeChange,
+    handleSectionPromptFigureTypeToggle,
+    handleSectionPromptFigureTypesReset,
     handlePromptRequestChange,
     handleTemplateModeChange,
     handleGeneratePromptDrafts,

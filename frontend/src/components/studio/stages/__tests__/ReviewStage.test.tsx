@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { waitFor } from '@testing-library/react';
 
 import { ReviewStage } from '@/components/studio/stages/ReviewStage';
 import type { StudioReviewAsset } from '@/studio/types';
@@ -64,6 +65,75 @@ describe('ReviewStage', () => {
     expect(screen.getByRole('img', { name: '图 1 预览' })).toBeInTheDocument();
     expect(screen.getByText('结果清单')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '标记为最终稿' })).toBeInTheDocument();
+  });
+
+  it('auto loads preview for a completed version without preview url', async () => {
+    const onPreviewAsset = vi.fn();
+
+    render(
+      <ReviewStage
+        {...createReviewStageProps()}
+        onPreviewAsset={onPreviewAsset}
+        assets={[
+          {
+            ...createReviewStageProps().assets[0],
+            versions: [
+              {
+                ...createReviewStageProps().assets[0].versions[0],
+                previewUrl: null,
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onPreviewAsset).toHaveBeenCalledWith('image-1');
+    });
+    expect(screen.queryByRole('button', { name: '加载预览' })).not.toBeInTheDocument();
+  });
+
+  it('auto loads preview when switching to another completed version without preview url', async () => {
+    const user = userEvent.setup();
+    const onPreviewAsset = vi.fn();
+
+    render(
+      <ReviewStage
+        {...createReviewStageProps()}
+        onPreviewAsset={onPreviewAsset}
+        assets={[
+          {
+            ...createReviewStageProps().assets[0],
+            versions: [
+              {
+                ...createReviewStageProps().assets[0].versions[0],
+                id: 'image-2',
+                imageId: 'image-2',
+                label: '精修 1',
+                createdAt: '2026-03-26T10:10:00Z',
+                previewUrl: 'blob:preview-2',
+              },
+              {
+                ...createReviewStageProps().assets[0].versions[0],
+                id: 'image-1',
+                imageId: 'image-1',
+                label: '原始生成',
+                previewUrl: null,
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+
+    expect(onPreviewAsset).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /原始生成/ }));
+
+    await waitFor(() => {
+      expect(onPreviewAsset).toHaveBeenCalledWith('image-1');
+    });
   });
 
   it('allows long result titles to wrap inside the result list', () => {
